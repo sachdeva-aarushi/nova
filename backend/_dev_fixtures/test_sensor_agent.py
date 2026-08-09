@@ -1,6 +1,9 @@
 """Standalone test runner for Sensor/Event Intelligence Agent.
 
 Run with: python backend/_dev_fixtures/test_sensor_agent.py
+
+NOTE: This is the backward-compatible test runner. The canonical tests live
+in backend/agents/sensor_event_intelligence/test_agent.py.
 """
 
 from __future__ import annotations
@@ -71,6 +74,8 @@ async def main() -> int:
     await bus.shutdown()
 
     # 4. Assertions
+    # NOTE: The refactored agent generates uuid4 event_ids, so we match by
+    # value/zone/source instead of the original fixture event_id strings.
     failures: list[str] = []
     passed_count = 0
 
@@ -86,51 +91,70 @@ async def main() -> int:
             print(msg)
             failures.append(label)
 
-    # Find received events by event_id
-    by_id = {evt["event_id"]: evt for evt in received_events}
+    # Helper: find events by value + zone
+    def find_events(
+        zone: str | None = None,
+        source: str | None = None,
+        value: float | None = None,
+    ) -> list[dict[str, Any]]:
+        results = []
+        for e in received_events:
+            if zone and e.get("zone_id") != zone:
+                continue
+            if source and e.get("source") != source:
+                continue
+            if value is not None and e.get("value") != value:
+                continue
+            results.append(e)
+        return results
 
-    # Assertion 1: evt_001 (200ppm) -> severity_hint="normal"
-    evt1 = by_id.get("evt_001")
+    # Assertion 1: evt_001 (200ppm, BAY-3, gas_sensor) -> severity_hint="normal"
+    evt1_matches = find_events(zone="BAY-3", source="gas_sensor", value=200.0)
     check(
-        evt1 is not None and evt1.get("severity_hint") == "normal",
+        len(evt1_matches) >= 1 and evt1_matches[0].get("severity_hint") == "normal",
         "evt_001 (200ppm) -> severity_hint='normal'",
-        f"Got: {evt1}",
+        f"Got: {evt1_matches}",
     )
 
     # Assertion 2: evt_002 (216ppm) -> severity_hint="elevated"
-    evt2 = by_id.get("evt_002")
+    evt2_matches = find_events(zone="BAY-3", source="gas_sensor", value=216.0)
     check(
-        evt2 is not None and evt2.get("severity_hint") == "elevated",
+        len(evt2_matches) == 1 and evt2_matches[0].get("severity_hint") == "elevated",
         "evt_002 (216ppm) -> severity_hint='elevated'",
-        f"Got: {evt2}",
+        f"Got: {evt2_matches}",
     )
 
     # Assertion 3: evt_007 (cctv confidence 0.91) -> received
-    evt7 = by_id.get("evt_007")
+    cctv_high = find_events(source="cctv")
     check(
-        evt7 is not None and evt7.get("source") == "cctv",
+        len(cctv_high) == 1,
         "evt_007 (cctv confidence 0.91) -> received",
-        f"Got: {evt7}",
+        f"Got {len(cctv_high)} CCTV events",
     )
 
     # Assertion 4: evt_008 (Bay5, no permit/maintenance) -> compound_flag=False
-    evt8 = by_id.get("evt_008")
+    bay5_events = find_events(zone="BAY-5", source="gas_sensor")
     check(
-        evt8 is not None and evt8.get("compound_flag") is False,
+        len(bay5_events) >= 1 and bay5_events[0].get("compound_flag") is False,
         "evt_008 (Bay5, no permit/maintenance) -> compound_flag=False",
-        f"Got: {evt8}",
+        f"Got: {bay5_events}",
     )
 
-    # Assertion 5: Bay3 window after all events -> compound_flag=True on gas events
-    evt5 = by_id.get("evt_005")
+    # Assertion 5: Bay3 window after permit+maintenance -> compound_flag=True on gas event
+    bay3_compound = [
+        e for e in received_events
+        if e.get("zone_id") == "BAY-3"
+        and e.get("source") == "gas_sensor"
+        and e.get("compound_flag") is True
+    ]
     check(
-        evt5 is not None and evt5.get("compound_flag") is True,
+        len(bay3_compound) >= 1,
         "Bay3 window after permit+maintenance -> compound_flag=True on gas event",
-        f"Got: {evt5}",
+        f"Got: {bay3_compound}",
     )
 
     # Assertion 6: Duplicate event_id -> only processed once
-    evt1_count = sum(1 for e in received_events if e["event_id"] == "evt_001")
+    evt1_count = len(find_events(zone="BAY-3", source="gas_sensor", value=200.0))
     check(
         evt1_count == 1,
         "Duplicate event_id -> only processed once",
@@ -138,11 +162,15 @@ async def main() -> int:
     )
 
     # Assertion 7: CCTV event with confidence 0.5 -> dropped
-    evt_low = by_id.get("evt_009_cctv_low")
+    low_conf = [
+        e for e in received_events
+        if e.get("source") == "cctv"
+        and e.get("metadata", {}).get("confidence") == 0.5
+    ]
     check(
-        evt_low is None,
+        len(low_conf) == 0,
         "CCTV event with confidence 0.5 -> dropped",
-        f"Found unexpectedly: {evt_low}",
+        f"Found unexpectedly: {low_conf}",
     )
 
     print("==================================================")
