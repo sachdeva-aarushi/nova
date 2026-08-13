@@ -8,108 +8,121 @@ export default function EventLog() {
 
   return (
     <div style={{
-      width: '280px',
+      width: '100%',
       height: '100%',
       background: '#FFFFFF',
-      borderRight: '1px solid #C8C9C6',
       display: 'flex',
       flexDirection: 'column',
-      boxShadow: '2px 0 6px rgba(0,0,0,0.02)',
-      zIndex: 20,
     }}>
+      {/* Header */}
       <div style={{
-        padding: '16px 20px',
+        padding: '14px 18px',
         borderBottom: '1px solid #E9E9E5',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        background: '#FFFFFF',
       }}>
         <div style={{
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: '0.65rem',
           letterSpacing: '0.12em',
-          color: '#0E0D1F',
-          fontWeight: 700,
+          color: '#2C2D30',
+          fontWeight: 800,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
         }}>
           REAL-TIME AUDIT LOG
+          <span style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: '#D9534F',
+            display: 'inline-block',
+            boxShadow: '0 0 6px rgba(217,83,79,0.5)',
+          }} />
         </div>
-        <div style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: '#72856C',
-          boxShadow: '0 0 8px rgba(114,133,108,0.6)',
-          animation: 'pulse-ring 2s ease-in-out infinite',
-        }} />
       </div>
 
+      {/* Events List */}
       <div style={{
         flex: 1,
         overflowY: 'auto',
-        padding: '12px 16px',
+        padding: '12px 14px',
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
+        background: '#FAFAFA',
       }}>
         {events.length === 0 && (
           <div style={{
-            fontFamily: "'Titillium Web', sans-serif",
-            fontSize: '0.75rem',
-            color: '#8E9096',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '0.68rem',
+            color: '#A0A2A8',
             textAlign: 'center',
             marginTop: '40px',
           }}>
-            Awaiting telemetry events...
+            Awaiting telemetry & voice events...
           </div>
         )}
 
-        {events.map((evt: any) => (
-          <div
-            key={evt.id}
-            style={{
-              background: evt.risk === 'critical' ? 'rgba(200,75,66,0.08)' : evt.risk === 'high' ? 'rgba(217,138,58,0.08)' : '#F7F6F2',
-              borderLeft: `3px solid ${evt.risk === 'critical' ? '#C84B42' : evt.risk === 'high' ? '#D98A3A' : evt.risk === 'elevated' ? '#D98A3A' : '#72856C'}`,
-              borderRadius: '0 6px 6px 0',
-              padding: '10px 12px',
-              animation: 'fade-up 0.3s ease both',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            }}
-          >
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '4px',
-            }}>
-              <span style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '0.55rem',
-                color: '#62636A',
+        {events.map((evt: any) => {
+          const isCritical = evt.risk === 'critical'
+          const timeStr = new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          return (
+            <div
+              key={evt.id}
+              style={{
+                background: '#FFFFFF',
+                border: `1px solid ${isCritical ? '#FCDAD7' : '#E9E9E5'}`,
+                borderRadius: '6px',
+                padding: '10px 12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                animation: 'fade-up 0.3s ease both',
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '6px',
               }}>
-                {new Date(evt.timestamp).toLocaleTimeString()}
-              </span>
-              <span style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '0.5rem',
-                color: evt.risk === 'critical' ? '#C84B42' : '#72856C',
-                textTransform: 'uppercase',
-                fontWeight: 700,
-              }}>
-                {evt.type}
-              </span>
-            </div>
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '0.55rem',
+                  color: '#8E9096',
+                }}>
+                  {timeStr}
+                </span>
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '0.5rem',
+                  color: isCritical ? '#C84B42' : '#D9534F',
+                  background: isCritical ? '#FDE8E8' : '#FFF3EE',
+                  border: `1px solid ${isCritical ? '#F8B4B4' : '#FCDAD7'}`,
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                }}>
+                  {evt.type || 'NOVA-ACTION'}
+                </span>
+              </div>
 
-            <div style={{
-              fontFamily: "'Titillium Web', sans-serif",
-              fontSize: '0.75rem',
-              color: '#0E0D1F',
-              lineHeight: 1.35,
-              fontWeight: 400,
-            }}>
-              {evt.message}
+              <div style={{
+                fontFamily: "'Inter', -apple-system, sans-serif",
+                fontSize: '0.72rem',
+                color: '#2C2D30',
+                lineHeight: 1.4,
+                fontWeight: 500,
+              }}>
+                {evt.message}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

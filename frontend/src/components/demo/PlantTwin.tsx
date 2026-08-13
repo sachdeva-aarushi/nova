@@ -546,6 +546,105 @@ export default function PlantTwin() {
         })}
       </svg>
 
+      {/* Bottom Floating View Controls (2D/3D, +/-, Reset) */}
+      <div style={{
+        position: 'absolute',
+        bottom: 20,
+        right: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        background: '#FFFFFF',
+        border: '1px solid #E9E9E5',
+        borderRadius: '6px',
+        padding: '4px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        zIndex: 10,
+      }}>
+        {['2D', '3D'].map(mode => (
+          <button
+            key={mode}
+            style={{
+              background: mode === '3D' ? '#FFF3EE' : '#F7F6F2',
+              color: mode === '3D' ? '#D9534F' : '#62636A',
+              border: `1px solid ${mode === '3D' ? '#FCDAD7' : '#C8C9C6'}`,
+              borderRadius: '4px',
+              padding: '3px 10px',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '0.6rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {mode}
+          </button>
+        ))}
+        <div style={{ width: '1px', height: '16px', background: '#E9E9E5', margin: '0 2px' }} />
+        <button
+          onClick={() => store.focusZone('Bay 3')}
+          title="Zoom In"
+          style={{
+            background: '#F7F6F2',
+            color: '#2C2D30',
+            border: '1px solid #C8C9C6',
+            borderRadius: '4px',
+            width: '24px',
+            height: '24px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          +
+        </button>
+        <button
+          onClick={() => store.resetView()}
+          title="Zoom Out"
+          style={{
+            background: '#F7F6F2',
+            color: '#2C2D30',
+            border: '1px solid #C8C9C6',
+            borderRadius: '4px',
+            width: '24px',
+            height: '24px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          -
+        </button>
+        <button
+          onClick={() => store.resetView()}
+          title="Reset View"
+          style={{
+            background: '#F7F6F2',
+            color: '#2C2D30',
+            border: '1px solid #C8C9C6',
+            borderRadius: '4px',
+            width: '24px',
+            height: '24px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          ↺
+        </button>
+      </div>
+
       {/* Risk index footer */}
       <div style={{
         position: 'absolute', bottom: 20, left: 20,

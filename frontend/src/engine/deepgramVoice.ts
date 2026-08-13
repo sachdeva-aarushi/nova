@@ -89,7 +89,7 @@ export async function startDeepgramListening(
   const wsUrl =
     `wss://api.deepgram.com/v1/listen?` +
     `model=nova-2&language=en-US&smart_format=true&numerals=true&punctuate=true` +
-    `&interim_results=true&endpointing=500&utterance_end_ms=1200&vad_events=true` +
+    `&interim_results=true&endpointing=500&utterance_end_ms=1200&vad_events=true&keepalive=true` +
     `&token=${encodeURIComponent(DEEPGRAM_API_KEY)}`
 
   try {
