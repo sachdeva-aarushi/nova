@@ -89,7 +89,7 @@ export async function startDeepgramListening(
   const wsUrl =
     `wss://api.deepgram.com/v1/listen?` +
     `model=nova-2&language=en-US&smart_format=true&numerals=true&punctuate=true` +
-    `&interim_results=true&endpointing=500&utterance_end_ms=1200&vad_events=true&keepalive=true` +
+    `&interim_results=true&endpointing=500&utterance_end_ms=1200&vad_events=true` +
     `&token=${encodeURIComponent(DEEPGRAM_API_KEY)}`
 
   try {
@@ -115,13 +115,15 @@ export async function startDeepgramListening(
         }
       }
 
-      // Send KeepAlive frame every 5 seconds to prevent idle timeout
+      // Send KeepAlive frame every 3 seconds to prevent idle timeout
       if (keepAliveInterval) clearInterval(keepAliveInterval)
       keepAliveInterval = setInterval(() => {
         if (dgSocket?.readyState === WebSocket.OPEN) {
-          dgSocket.send(JSON.stringify({ type: 'KeepAlive' }))
+          try {
+            dgSocket.send(JSON.stringify({ type: 'KeepAlive' }))
+          } catch {}
         }
-      }, 5000)
+      }, 3000)
 
       startStreamingAudio()
     }
@@ -161,17 +163,21 @@ export async function startDeepgramListening(
     }
 
     dgSocket.onclose = (ev) => {
-      console.warn(`[Deepgram STT] Socket closed — Code: ${ev.code}, Reason: "${ev.reason || 'None'}"`)
-
       if (keepAliveInterval) {
         clearInterval(keepAliveInterval)
         keepAliveInterval = null
       }
 
+      // Crucial WebM fix: Stop MediaRecorder when socket closes so the next socket gets a fresh WebM header chunk
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try { mediaRecorder.stop() } catch {}
+        mediaRecorder = null
+      }
+
       if (isListening) {
-        // Deepgram code 1011 (idle silence timeout) or 1000 (normal close): auto-reconnect without counting as failure
+        // Deepgram code 1011 (idle silence timeout) or 1000 (normal close): auto-reconnect cleanly
         if (ev.code === 1011 || ev.code === 1000) {
-          console.log('[Deepgram STT] Idle silence timeout / clean close — auto-reconnecting socket...')
+          console.log(`[Deepgram STT] Socket closed cleanly (Code ${ev.code}) — auto-reconnecting...`)
           if (reconnectTimeout) clearTimeout(reconnectTimeout)
           reconnectTimeout = setTimeout(() => {
             if (isListening && onTranscriptCallback) {
@@ -180,6 +186,8 @@ export async function startDeepgramListening(
           }, 300)
           return
         }
+
+        console.warn(`[Deepgram STT] Socket closed — Code: ${ev.code}, Reason: "${ev.reason || 'None'}"`)
 
         consecutiveFails++
         if (consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
@@ -205,7 +213,16 @@ export async function startDeepgramListening(
 
 function startStreamingAudio() {
   if (!audioStream) return
-  if (mediaRecorder && mediaRecorder.state === 'recording') return
+
+  // Stop existing recorder if any to guarantee a fresh WebM header for the new socket
+  if (mediaRecorder) {
+    try {
+      if (mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop()
+      }
+    } catch {}
+    mediaRecorder = null
+  }
 
   const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
     ? 'audio/webm;codecs=opus'

@@ -116,6 +116,36 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     status TEXT,
     created_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS sensor_readings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          DATETIME DEFAULT (datetime('now', 'utc')),
+    zone_id     TEXT NOT NULL,
+    sensor_type TEXT NOT NULL,
+    value       REAL NOT NULL,
+    unit        TEXT NOT NULL,
+    is_anomaly  INTEGER DEFAULT 0,
+    cycle_num   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_readings_zone_ts
+    ON sensor_readings(zone_id, ts DESC);
+
+CREATE INDEX IF NOT EXISTS idx_readings_ts
+    ON sensor_readings(ts DESC);
+
+CREATE TABLE IF NOT EXISTS pending_permits (
+    id              TEXT PRIMARY KEY,
+    case_id         TEXT NOT NULL,
+    zone_id         TEXT NOT NULL,
+    action_type     TEXT NOT NULL,
+    reason          TEXT NOT NULL,
+    status          TEXT DEFAULT 'pending',
+    created_at      DATETIME DEFAULT (datetime('now', 'utc')),
+    resolved_at     DATETIME,
+    resolved_by     TEXT,
+    operator_command TEXT
+);
 """
 
 
