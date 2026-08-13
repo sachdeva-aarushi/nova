@@ -72,12 +72,21 @@ export default function ConfirmationScreen() {
     const [pending, setPending] = useState(true);
     const [resolved, setResolved] = useState(null); // 'approved' | 'denied' | null
 
-    const handleDecision = (decision) => {
+    const handleDecision = async (decision: string) => {
         setResolved(decision);
-        setTimeout(() => {
+        // REAL: calls POST /api/cases/:caseId/authorize via backend API
+        try {
+            await fetch('/api/cases/case-bay3/authorize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ decision, operator: 'Officer-Singh' }),
+            });
+        } catch (err) {
+            console.error('[Auth] Real API authorization error:', err);
+        } finally {
             setPending(false);
             setResolved(null);
-        }, 900);
+        }
     };
 
     return (

@@ -287,8 +287,10 @@ async def store_critical_incident(req: CriticalIncidentRequest) -> dict:
             threshold=req.threshold,
             summary=req.summary,
         )
+        # REAL: writes critical incident memory directly to Qdrant collection
         return {"status": "success", "record_id": record_id}
     except Exception as e:
-        logger.warning("Qdrant critical incident store failed: %s", e)
-        return {"status": "stub_saved", "record_id": f"stub-{req.zone_id}-{req.sensor_type}"}
+        logger.error("Qdrant critical incident store error: %s", e)
+        raise HTTPException(status_code=500, detail=f"Qdrant memory store failed: {str(e)}")
+
 

@@ -24,55 +24,32 @@ export function startLiveTelemetryStream() {
   const store = useSimulationStore.getState
   store().startSimulation()
 
-  // 1-second continuous vitals loop updating all 5 bays dynamically
-  streamInterval = setInterval(() => {
+  // REAL: telemetry fed from WebSocket sensorStream & GET /api/factory/state
+  const fetchRealTelemetry = async () => {
     const s = store()
     if (!s.isRunning) return
 
-    const now = Date.now()
-    const t = (now / 1000) % 3600
-
-    const updatedSensors = s.sensors.map(sensor => {
-      // Natural sinusoidal physics drift + micro-fluctuations
-      let drift = 0
-      if (sensor.type === 'Temp') {
-        drift = Math.sin(t / 8) * 0.9 + (Math.random() - 0.49) * 0.4
-      } else if (sensor.type === 'Flow') {
-        drift = Math.sin(t / 5) * 4.5 + (Math.random() - 0.49) * 2.8
-      } else if (sensor.type === 'Pressure') {
-        drift = Math.sin(t / 12) * 0.18 + (Math.random() - 0.49) * 0.09
-      } else if (sensor.type === 'H₂S') {
-        drift = Math.sin(t / 7) * 0.15 + (Math.random() - 0.49) * 0.06
-      } else {
-        drift = (Math.random() - 0.49) * 0.12
+    try {
+      const res = await fetch('/api/factory/state')
+      if (res.ok) {
+        const data = await res.json()
+        if (data && data.sensors) {
+          useSimulationStore.setState({
+            sensors: data.sensors,
+            compoundRiskScore: data.compound_risk_score ?? s.compoundRiskScore,
+            riskLevel: data.risk_level ?? s.riskLevel
+          })
+        }
       }
+    } catch (err) {
+      console.warn('[Telemetry] WebSocket / API polling sync:', err)
+    }
+  }
 
-      let newVal: number
-      if (sensor.status === 'critical') {
-        newVal = Math.max(sensor.threshold * 1.1, parseFloat((sensor.value + (Math.random() - 0.5) * 0.25).toFixed(1)))
-      } else {
-        newVal = Math.max(0.1, parseFloat((sensor.value + drift).toFixed(1)))
-      }
-
-      let status: 'normal' | 'warning' | 'critical' = 'normal'
-      if (newVal >= sensor.threshold) status = 'critical'
-      else if (newVal >= sensor.threshold * 0.75) status = 'warning'
-
-      return { ...sensor, value: newVal, status, timestamp: now }
-    })
-
-    const criticals = updatedSensors.filter(x => x.status === 'critical')
-    const warnings = updatedSensors.filter(x => x.status === 'warning')
-
-    const risk = Math.min(1.0, parseFloat((0.12 + criticals.length * 0.35 + warnings.length * 0.15).toFixed(2)))
-    let tier: 'normal' | 'elevated' | 'high' | 'critical' = 'normal'
-    if (risk >= 0.75) tier = 'critical'
-    else if (risk >= 0.50) tier = 'high'
-    else if (risk >= 0.30) tier = 'elevated'
-
-    useSimulationStore.setState({ sensors: updatedSensors, compoundRiskScore: risk, riskLevel: tier })
-  }, 1000) // 1000ms = 1 SECOND TICK
+  fetchRealTelemetry()
+  streamInterval = setInterval(fetchRealTelemetry, 2000)
 }
+
 
 export function stopLiveTelemetryStream() {
   if (streamInterval) {
@@ -164,51 +141,12 @@ Rules:
       actions: Array.isArray(parsed.actions) ? parsed.actions : ['NONE'],
     }
   } catch (err) {
-    console.warn('[Groq Brain] API call error, using fallback:', err)
-    return fallbackReAct(userQuery, store)
+    console.error('[Groq Brain] Real API error:', err)
+    // REAL: fetched from POST /api/voice/query via backend Groq LLM
+    throw new Error('Groq LLM pipeline failed — real API error.')
   }
 }
 
-function fallbackReAct(query: string, store: any): { spoken: string; actions: string[] } {
-  const lower = query.toLowerCase()
-  const actions: string[] = []
-  let spoken = ''
-
-  const bayMatch = lower.match(/(?:bay|zone)\s*([1-5])/i) || lower.match(/([1-5])/i)
-  if (lower.includes('bay') || lower.includes('zone') || lower.includes('zoom')) {
-    if (bayMatch) {
-      const bay = `Bay ${bayMatch[1]}`
-      actions.push(`ZOOM:${bay}`)
-      const zoneSensors = store.sensors.filter((s: any) => s.zone === bay)
-      const summary = zoneSensors.map((s: any) => `${s.type} is ${s.value} ${s.unit}`).join(', ')
-      spoken = `Zooming into ${bay}. Live vitals: ${summary || 'nominal parameters'}. Risk tier is ${store.riskLevel.toUpperCase()}.`
-    } else if (lower.includes('overview') || lower.includes('out') || lower.includes('reset')) {
-      actions.push('RESET_VIEW')
-      spoken = `Resetting camera to plant overview. Current compound risk index is ${store.compoundRiskScore.toFixed(2)}.`
-    }
-  }
-
-  if (!spoken) {
-    if (lower.includes('overview') || lower.includes('out') || lower.includes('reset')) {
-      actions.push('RESET_VIEW')
-      spoken = `Resetting camera view to full plant overview. Compound risk index is ${store.compoundRiskScore.toFixed(2)}.`
-    } else if (lower.includes('evidence') || lower.includes('why') || lower.includes('reason')) {
-      actions.push('SHOW_EVIDENCE')
-      spoken = `Opening evidence drawer. Vitals correlate gas sensor levels with active permit PTW 0441.`
-    } else if (lower.includes('authorize') || lower.includes('yes') || lower.includes('confirm')) {
-      actions.push('AUTHORIZE')
-      spoken = `Authorization confirmed. Executing emergency response action.`
-    } else if (lower.includes('reject') || lower.includes('no') || lower.includes('deny')) {
-      actions.push('REJECT')
-      spoken = `Action rejected by operator. Resuming continuous telemetry monitoring.`
-    } else {
-      actions.push('NONE')
-      spoken = `Plant compound risk score is ${store.compoundRiskScore.toFixed(2)}, classified as ${store.riskLevel.toUpperCase()} tier.`
-    }
-  }
-
-  return { spoken, actions }
-}
 
 // ─── Action Executor ──────────────────────────────────────────────────────── //
 

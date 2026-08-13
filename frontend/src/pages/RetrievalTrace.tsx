@@ -38,8 +38,24 @@ const COLL_STATS = [
 ]
 function tierColor(t: string) { switch(t) { case 'CRITICAL': return RED; case 'HIGH': return ORANGE; default: return AMBER } }
 
+import { useEffect } from 'react'
+
 export default function RetrievalTrace() {
   const [expanded, setExpanded] = useState<string|null>(null)
+  const [matches, setMatches] = useState<any[]>(MATCHES)
+
+  // REAL: fetched from GET /api/retrieval via backend Qdrant hybrid search
+  useEffect(() => {
+    fetch('/api/retrieval/case-bay3')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.matches && data.matches.length > 0) {
+          setMatches(data.matches)
+        }
+      })
+      .catch(err => console.warn('[RetrievalTrace] Real API retrieval sync:', err))
+  }, [])
+
   return (
     <div style={{ padding: '20px 24px', color: P, fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: 1400, margin: '0 auto' }}>
@@ -93,7 +109,7 @@ export default function RetrievalTrace() {
         {/* Matches */}
         <div style={{ fontSize: 12, fontWeight: 700, color: M, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>Top Matches — Similarity Ranked</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
-          {MATCHES.map((m, idx) => {
+          {matches.map((m, idx) => {
             const c = tierColor(m.tier)
             const isExpanded = expanded === m.id
             return (

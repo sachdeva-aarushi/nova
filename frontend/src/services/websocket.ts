@@ -11,11 +11,18 @@ import type { WsEnvelope, WsStatus } from '../types/api'
 type MessageHandler = (msg: WsEnvelope) => void
 type StatusHandler = (status: WsStatus) => void
 
-const WS_HOST: string =
-  (import.meta.env.VITE_WS_HOST as string | undefined) ??
-  (typeof window !== 'undefined'
-    ? `${window.location.hostname}:8000`
-    : 'localhost:8000')
+const getWsUrl = (sessionId: string): string => {
+  if (import.meta.env.VITE_WS_HOST) {
+    const host = import.meta.env.VITE_WS_HOST as string
+    const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${host}/ws/session/${sessionId}`
+  }
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}/ws/session/${sessionId}`
+  }
+  return `ws://localhost:8000/ws/session/${sessionId}`
+}
 
 const MAX_RETRIES = 5
 const BASE_DELAY_MS = 1_000
@@ -67,7 +74,7 @@ export class CaseWebSocket {
   // ── Internal ────────────────────────────────────────────────────────── //
 
   private _open(): void {
-    const url = `ws://${WS_HOST}/ws/session/${this.sessionId}`
+    const url = getWsUrl(this.sessionId)
     const ws = new WebSocket(url)
     this.ws = ws
 

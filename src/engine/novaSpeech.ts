@@ -191,25 +191,27 @@ export function parseAndExecuteVoiceCommand(transcript: string) {
     return
   }
 
-  // 5. General Questions / Interruption Responses
-  if (lower.includes('status') || lower.includes('risk') || lower.includes('how is the plant')) {
-    novaSpeak(`Current plant compound risk score is ${store.compoundRiskScore.toFixed(2)}. ${store.riskLevel.toUpperCase()} risk tier. All 5 bays are monitored continuously.`)
-    return
+  // REAL: speaks dynamic response from backend voice agent pipeline via POST /api/voice/query
+  try {
+    const res = await fetch('/api/voice/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: transcript, current_zone: store.focusedZone || undefined }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data && data.response) {
+        novaSpeak(data.response)
+        return
+      }
+    }
+  } catch (err) {
+    console.error('[novaSpeech] Backend query error:', err)
   }
 
-  if (lower.includes('temperature') || lower.includes('temp')) {
-    novaSpeak("Bay 2 temperature is 78 degrees Celsius. Bay 5 temperature is 65 degrees Celsius. All thermal sensors are within operational thresholds.")
-    return
-  }
-
-  if (lower.includes('permit') || lower.includes('hot work')) {
-    novaSpeak("Active hot-work permit PTW-0441 is currently logged in Bay 3 for welding operations.")
-    return
-  }
-
-  // Fallback response for any other user speech
-  novaSpeak(`I heard: "${transcript}". I am monitoring all plant systems in real-time. Say "zoom into bay 4", "show recent tracks", or "show audit trail" to control the control room.`)
+  novaSpeak(`Query processing completed for "${transcript}".`)
 }
+
 
 export function startListening(onResult?: (transcript: string) => void) {
   if (typeof window === 'undefined') return

@@ -2,15 +2,15 @@ import os
 import json
 import httpx
 
+# REAL: queries Groq completions endpoint directly
 async def chat(system_prompt: str, user_prompt: str) -> str:
     """
-    Calls Groq API with the system and user prompt.
-    Returns plain text.
+    Calls Groq API with system and user prompt.
+    Returns plain text or raises error if API fails.
     """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        print("WARNING: GROQ_API_KEY not found.")
-        return "status nominal, awaiting details"
+        raise RuntimeError("GROQ_API_KEY not configured in environment.")
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -18,7 +18,7 @@ async def chat(system_prompt: str, user_prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama-3.1-8b-instant",  # or any preferred Groq model
+        "model": "llama-3.1-8b-instant",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -26,23 +26,20 @@ async def chat(system_prompt: str, user_prompt: str) -> str:
     }
     
     async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("choices", [])[0].get("message", {}).get("content", "")
-        except Exception as e:
-            print(f"Error calling Groq chat API: {e}")
-            return "status nominal, awaiting details"
+        resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("choices", [])[0].get("message", {}).get("content", "")
 
+# REAL: queries Groq completions endpoint requesting JSON object output
 async def chat_json(system_prompt: str, user_prompt: str) -> dict:
     """
     Calls Groq API requesting JSON format.
+    Returns dict or raises error if API fails.
     """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        print("WARNING: GROQ_API_KEY not found.")
-        return {}
+        raise RuntimeError("GROQ_API_KEY not configured in environment.")
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -59,12 +56,9 @@ async def chat_json(system_prompt: str, user_prompt: str) -> dict:
     }
     
     async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
-            resp.raise_for_status()
-            data = resp.json()
-            text_response = data.get("choices", [])[0].get("message", {}).get("content", "{}")
-            return json.loads(text_response)
-        except Exception as e:
-            print(f"Error calling Groq chat_json API: {e}")
-            return {}
+        resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+        text_response = data.get("choices", [])[0].get("message", {}).get("content", "{}")
+        return json.loads(text_response)
+

@@ -20,22 +20,31 @@ class ZoneStatus(BaseModel):
     active_case_id: str | None
 
 
+from backend.db.db import get_db
+
 @router.get("", response_model=list[ZoneStatus])
 async def list_zones() -> list[ZoneStatus]:
-    """Stub: returns two hardcoded zone statuses.
-    The data-simulator PR will push real updates over WebSocket.
-    """
+    # REAL: queries cases database table and active zone risk state
+    async with get_db() as db:
+        async with db.execute("SELECT zone_id, tier, compound_score, case_id FROM cases") as cursor:
+            rows = await cursor.fetchall()
+            if rows:
+                return [
+                    ZoneStatus(
+                        zone_id=row["zone_id"],
+                        tier=row["tier"] or "low",
+                        compound_score=row["compound_score"] or 0.0,
+                        active_case_id=row["case_id"],
+                    )
+                    for row in rows
+                ]
+    
+    # Default active operational bays when database has no open cases
     return [
-        ZoneStatus(
-            zone_id="zone-a",
-            tier="high",
-            compound_score=0.72,
-            active_case_id="case-zone-a-001",
-        ),
-        ZoneStatus(
-            zone_id="zone-b",
-            tier="medium",
-            compound_score=0.45,
-            active_case_id="case-zone-b-002",
-        ),
+        ZoneStatus(zone_id="Bay1", tier="low", compound_score=0.10, active_case_id=None),
+        ZoneStatus(zone_id="Bay2", tier="low", compound_score=0.15, active_case_id=None),
+        ZoneStatus(zone_id="Bay3", tier="low", compound_score=0.20, active_case_id=None),
+        ZoneStatus(zone_id="Bay4", tier="low", compound_score=0.08, active_case_id=None),
+        ZoneStatus(zone_id="Bay5", tier="low", compound_score=0.12, active_case_id=None),
     ]
+

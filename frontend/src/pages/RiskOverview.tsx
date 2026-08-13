@@ -261,10 +261,23 @@ function HeroInteractiveConsole() {
   const [activeTab, setActiveTab] = useState<'signals' | 'voice' | 'memory'>('signals')
   const [compoundScore, setCompoundScore] = useState(87)
 
+  // REAL: fetched from GET /api/factory/state via backend
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCompoundScore(prev => 85 + Math.floor(Math.random() * 5))
-    }, 2400)
+    const fetchScore = async () => {
+      try {
+        const res = await fetch('/api/factory/state')
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.compound_risk_score != null) {
+            setCompoundScore(Math.round(data.compound_risk_score * 100))
+          }
+        }
+      } catch (err) {
+        console.warn('[RiskOverview] Real API sync:', err)
+      }
+    }
+    fetchScore()
+    const timer = setInterval(fetchScore, 2400)
     return () => clearInterval(timer)
   }, [])
 

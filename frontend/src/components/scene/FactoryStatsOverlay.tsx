@@ -10,17 +10,29 @@ export default function FactoryStatsOverlay() {
     pressure: 101.2
   })
 
+  // REAL: fetched from GET /api/factory/state
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStats(prev => ({
-        production: Math.max(90, Math.min(100, prev.production + (Math.random() - 0.5) * 0.5)),
-        power: Math.max(3.5, Math.min(5.0, prev.power + (Math.random() - 0.5) * 0.1)),
-        personnel: prev.personnel,
-        pressure: Math.max(98, Math.min(105, prev.pressure + (Math.random() - 0.5) * 0.8))
-      }))
-    }, 2000)
+    const fetchStats = async () => {
+      try {
+        const res = await fetch('/api/factory/state')
+        if (res.ok) {
+          const data = await res.json()
+          setStats(prev => ({
+            production: data.production_efficiency ?? prev.production,
+            power: data.power_draw_mw ?? prev.power,
+            personnel: data.active_personnel ?? prev.personnel,
+            pressure: data.system_pressure_kpa ?? prev.pressure
+          }))
+        }
+      } catch (err) {
+        console.warn('[FactoryStatsOverlay] Real API sync:', err)
+      }
+    }
+    fetchStats()
+    const interval = setInterval(fetchStats, 2000)
     return () => clearInterval(interval)
   }, [])
+
 
   return (
     <div style={{

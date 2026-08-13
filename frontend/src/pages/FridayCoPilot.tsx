@@ -27,22 +27,7 @@ const QUICK_CMDS = [
   { icon: Zap,           label: 'Recommend action',  cmd: 'What action do you recommend I take right now?', color: '#F59E0B' },
 ]
 
-const NOVA_RESPONSES: Record<string, string> = {
-  default: "I'm monitoring all five bays continuously. No critical anomalies at this moment. Compound risk is stable. Standing by for your command.",
-  bay3: "Bay 3 — Refining Unit — currently shows ELEVATED gas concentration. H2S reads 8.2 ppm. Compressor C-14 is running at 94% capacity. I recommend immediate inspection and consider issuing a permit suspension if gas levels climb.",
-  similar: "I've searched the Qdrant memory vault. Found 3 similar incidents:\n\n• Case INC-2024-041: Gas leak in Bay 3 — resolved via permit suspend + ventilation (72h)\n• Case INC-2024-019: Compressor overpressure — root cause: seal degradation\n• Case INC-2023-088: Multi-sensor false-positive — cleared after recalibration\n\nMost relevant: INC-2024-041 (similarity 0.88). Recommend same playbook.",
-  risk: "Compound Risk Assessment:\n\n• Bay 3 — HIGH (gas leak vector + hot-work permit PTW-0441)\n• Bay 4 — MEDIUM (reactor temp drift +2.4°C)\n• Bay 1 — LOW (nominal)\n• Bay 2 — LOW (nominal)\n• Bay 5 — LOW (nominal)\n\nOverall compound risk score: 0.72. Primary driver: Bay 3 gas concentration + PTW-0441 hot-work permit correlation.",
-  action: "My recommendation:\n\n1. IMMEDIATE — Issue permit suspension for PTW-0441 in Bay 3\n2. SHORT-TERM — Evacuate non-essential personnel from Bay 3\n3. PARALLEL — Monitor Bay 3 gas sensors for stabilization\n\nI've prepared the authorization request. Awaiting your approval.",
-}
 
-function pickResponse(input: string): string {
-  const l = input.toLowerCase()
-  if (l.includes('bay 3') || l.includes('bay3') || l.includes('gas') || l.includes('refin')) return NOVA_RESPONSES.bay3
-  if (l.includes('similar') || l.includes('past') || l.includes('history')) return NOVA_RESPONSES.similar
-  if (l.includes('risk') || l.includes('summary') || l.includes('status')) return NOVA_RESPONSES.risk
-  if (l.includes('action') || l.includes('recommend') || l.includes('what should')) return NOVA_RESPONSES.action
-  return NOVA_RESPONSES.default
-}
 
 function useTypewriter(text: string, speed = 18) {
   const [displayed, setDisplayed] = useState('')
@@ -143,22 +128,39 @@ export default function NovaCoPilot() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
   }, [])
 
-  const send = useCallback((text: string) => {
+  const send = useCallback(async (text: string) => {
     if (!text.trim() || thinking) return
     const userMsg: Message = { id: 'u-' + Date.now(), role: 'user', ts: Date.now(), text: text.trim() }
     setMsgs(prev => [...prev, userMsg])
     setInput('')
     setThinking(true)
     scrollBottom()
-    const delay = 800 + Math.random() * 600
-    setTimeout(() => {
-      const response = pickResponse(text)
-      const novaMsg: Message = { id: 'f-' + Date.now(), role: 'nova', ts: Date.now(), text: response, typing: true }
-      setMsgs(prev => [...prev, novaMsg])
+
+    // REAL: fetched from POST /api/voice/query via backend Groq LLM agent
+    try {
+      const res = await fetch('/api/voice/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text.trim() })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const responseText = data.response || 'No response returned from agent pipeline.'
+        const novaMsg: Message = { id: 'f-' + Date.now(), role: 'nova', ts: Date.now(), text: responseText, typing: true }
+        setMsgs(prev => [...prev, novaMsg])
+      } else {
+        throw new Error(`API returned ${res.status}`)
+      }
+    } catch (err) {
+      console.error('[FridayCoPilot] Real API query error:', err)
+      const errorMsg: Message = { id: 'f-' + Date.now(), role: 'nova', ts: Date.now(), text: 'Error connecting to NOVA voice agent backend pipeline.', typing: false }
+      setMsgs(prev => [...prev, errorMsg])
+    } finally {
       setThinking(false)
       scrollBottom()
-    }, delay)
+    }
   }, [thinking, scrollBottom])
+
 
   const pct = (pulse / 60) * Math.PI * 2
   const waveH = thinking ? [4,8,12,8,4,10,6,14,6,10].map((h, i) => h * (0.5 + 0.5 * Math.sin(pct + i * 0.8))) : [3,3,3,3,3,3,3,3,3,3]

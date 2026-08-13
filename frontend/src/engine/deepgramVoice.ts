@@ -11,7 +11,7 @@
 
 import { useSimulationStore } from '../store/useSimulationStore'
 
-const DEEPGRAM_API_KEY = (import.meta as any).env?.VITE_DEEPGRAM_API_KEY || 'a7d2b404d9c72e2cf5e1e1a539bc27a1c5d944e2'
+const DEEPGRAM_API_KEY = (import.meta as any).env?.VITE_DEEPGRAM_API_KEY || '656b6eb0a10cc528cf5d6c209372a872cdef52af'
 const RIME_API_KEY = (import.meta as any).env?.VITE_RIME_API_KEY || 'ReIWMYpgRfMKnYxSFmTbjhad-zhYe4mIGfbkRH29YWc'
 
 // ─── State ────────────────────────────────────────────────────────────────── //
@@ -29,6 +29,31 @@ let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let audioBufferQueue: Blob[] = []
 let consecutiveFails = 0
 const MAX_CONSECUTIVE_FAILS = 3
+
+// ─── Self-Echo & Acoustic Feedback Filter ───────────────────────────── //
+
+function isSelfEcho(text: string): boolean {
+  if (!isSpeaking && !(window as any)._isRimeSpeaking) return false
+
+  const store = useSimulationStore.getState()
+  const caption = (store.novaCaption || store.novaMessage || '').toLowerCase().replace(/[^a-z0-9\s]/g, '')
+  if (!caption) return true // If speaking but caption is not set yet, suppress to prevent hearing self
+
+  const textClean = text.toLowerCase().replace(/[^a-z0-9\s]/g, '')
+  if (!textClean) return true
+
+  if (caption.includes(textClean) || textClean.includes(caption)) return true
+
+  const textWords = textClean.split(/\s+/).filter(w => w.length > 2)
+  if (textWords.length === 0) return false
+
+  let matches = 0
+  for (const word of textWords) {
+    if (caption.includes(word)) matches++
+  }
+
+  return (matches / textWords.length) >= 0.4
+}
 
 // ─── STT (Deepgram Nova-2) ─────────────────────────────────────────────────── //
 
@@ -64,7 +89,8 @@ export async function startDeepgramListening(
   const wsUrl =
     `wss://api.deepgram.com/v1/listen?` +
     `model=nova-2&language=en-US&smart_format=true&numerals=true&punctuate=true` +
-    `&interim_results=true&endpointing=500&utterance_end_ms=1200&vad_events=true`
+    `&interim_results=true&endpointing=500&utterance_end_ms=1200&vad_events=true` +
+    `&token=${encodeURIComponent(DEEPGRAM_API_KEY)}`
 
   try {
     const timestamp = new Date().toISOString()
@@ -110,8 +136,13 @@ export async function startDeepgramListening(
           const isFinal: boolean = msg.is_final === true
 
           if (text && text.length > 0) {
-            // Instant Sub-100ms Voice Barge-In: Stop active TTS when speech is heard
-            if (isSpeaking) {
+            // Ignore acoustic self-hearing (NOVA microphone picking up NOVA speakers)
+            if (isSelfEcho(text)) {
+              return
+            }
+
+            // Instant Sub-100ms Voice Barge-In: Stop active TTS when genuine user speech is heard
+            if (isSpeaking || (window as any)._isRimeSpeaking) {
               stopCurrentTTS()
             }
             useSimulationStore.getState().setNovaCaption(isFinal ? '' : `🎙 ${text}`)
@@ -138,6 +169,18 @@ export async function startDeepgramListening(
       }
 
       if (isListening) {
+        // Deepgram code 1011 (idle silence timeout) or 1000 (normal close): auto-reconnect without counting as failure
+        if (ev.code === 1011 || ev.code === 1000) {
+          console.log('[Deepgram STT] Idle silence timeout / clean close — auto-reconnecting socket...')
+          if (reconnectTimeout) clearTimeout(reconnectTimeout)
+          reconnectTimeout = setTimeout(() => {
+            if (isListening && onTranscriptCallback) {
+              startDeepgramListening(onTranscriptCallback)
+            }
+          }, 300)
+          return
+        }
+
         consecutiveFails++
         if (consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
           console.warn('[Deepgram STT] Max retries reached — switching to Browser WebSpeech fallback')
@@ -268,7 +311,15 @@ function startWebSpeechFallback(onTranscript: (text: string, isFinal: boolean) =
         }
       }
 
+      const candidate = final.trim() || interim.trim()
+      if (candidate && isSelfEcho(candidate)) {
+        return
+      }
+
       if (final.trim()) {
+        if (isSpeaking || (window as any)._isRimeSpeaking) {
+          stopCurrentTTS()
+        }
         useSimulationStore.getState().setNovaCaption('')
         onTranscript(final.trim(), true)
       } else if (interim.trim()) {
@@ -305,6 +356,7 @@ export async function rimeSpeak(text: string): Promise<void> {
   store.setNovaCaption(text)
   store.setNovaMessage(text)
   isSpeaking = true
+  ;(window as any)._isRimeSpeaking = true
 
   if (RIME_API_KEY) {
     try {
@@ -342,6 +394,7 @@ export function deepgramSpeak(text: string): Promise<void> {
 
 export function stopCurrentTTS() {
   isSpeaking = false
+  ;(window as any)._isRimeSpeaking = false
 
   if (currentTTSSource) {
     try { currentTTSSource.stop() } catch {}
@@ -372,13 +425,14 @@ async function playAudioBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
       audioCtx.decodeAudioData(
         arrayBuffer,
         (buffer) => {
-          if (!audioCtx || !isListening) {
+          if (!audioCtx) {
             resolve()
             return
           }
 
           stopCurrentTTS()
           isSpeaking = true
+          ;(window as any)._isRimeSpeaking = true
 
           const source = audioCtx.createBufferSource()
           source.buffer = buffer
@@ -388,6 +442,7 @@ async function playAudioBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
           source.onended = () => {
             currentTTSSource = null
             isSpeaking = false
+            ;(window as any)._isRimeSpeaking = false
             useSimulationStore.getState().setNovaState('listening')
             resolve()
           }
@@ -408,16 +463,26 @@ async function playAudioBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
 function speakWebSpeechFallback(text: string) {
   if (!('speechSynthesis' in window)) return
 
-  window.speechSynthesis.cancel()
+  stopCurrentTTS()
+  isSpeaking = true
+  ;(window as any)._isRimeSpeaking = true
+
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.rate = 1.05
   utterance.pitch = 1.0
 
   utterance.onend = () => {
     isSpeaking = false
+    ;(window as any)._isRimeSpeaking = false
     useSimulationStore.getState().setNovaState('listening')
   }
 
-  isSpeaking = true
+  utterance.onerror = () => {
+    isSpeaking = false
+    ;(window as any)._isRimeSpeaking = false
+    useSimulationStore.getState().setNovaState('listening')
+  }
+
   window.speechSynthesis.speak(utterance)
 }
+

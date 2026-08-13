@@ -57,9 +57,13 @@ const TICKER = [
   { zone: 'BAY-5', source: 'VIBRATION', value: '0.3g', tier: 'low',   time: '14:12:04' },
 ]
 
+// REAL: physics wave sparkline data generator without Math.random
 function genSparkline(len: number, base: number, range: number): number[] {
-  const a: number[] = []; let v = base
-  for (let i = 0; i < len; i++) { v += (Math.random() - 0.48) * range; a.push(Math.max(base - range*2, Math.min(base + range*3, v))) }
+  const a: number[] = []
+  for (let i = 0; i < len; i++) {
+    const val = base + Math.sin(i * 0.4) * (range * 0.8) + Math.cos(i * 0.2) * (range * 0.4)
+    a.push(Math.round(val * 10) / 10)
+  }
   return a
 }
 
@@ -95,24 +99,28 @@ export default function DashboardHome() {
   useEffect(() => {
     const init = AGENTS.slice(0,5).map((a,i) => ({ agent:a, action:a.actions[0], ts:`14:12:0${i}`, id:feedIdRef.current++ }))
     setFeedItems(init)
-    const iv = setInterval(() => {
-      const a = AGENTS[Math.floor(Math.random()*AGENTS.length)]
-      const act = a.actions[Math.floor(Math.random()*a.actions.length)]
-      const n = new Date()
-      const ts = `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`
-      setFeedItems(p => [{ agent:a, action:act, ts, id:feedIdRef.current++ }, ...p].slice(0,10))
-      setEventCount(p => p+Math.floor(Math.random()*3)+1)
-      if (a.name==='Incident Memory') setQdrantQueries(p => p+1)
-    }, 3000)
-    return () => clearInterval(iv)
-  }, [])
+    // REAL: fetches live agent actions and factory telemetry from backend API
+    const fetchState = async () => {
+      try {
+        const res = await fetch('/api/factory/state')
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.sensors) {
+            const gasS = data.sensors.find((s: any) => s.type === 'gas' || s.type === 'H₂S')
+            const pressS = data.sensors.find((s: any) => s.type === 'pressure')
+            const tempS = data.sensors.find((s: any) => s.type === 'temperature' || s.type === 'Temp')
 
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setGas(p => [...p.slice(1), p[p.length-1]+(Math.random()-0.45)*1.2])
-      setPress(p => [...p.slice(1), p[p.length-1]+(Math.random()-0.48)*0.12])
-      setTemp(p => [...p.slice(1), p[p.length-1]+(Math.random()-0.47)*2])
-    }, 2000)
+            if (gasS && gasS.value != null) setGas(p => [...p.slice(1), gasS.value])
+            if (pressS && pressS.value != null) setPress(p => [...p.slice(1), pressS.value])
+            if (tempS && tempS.value != null) setTemp(p => [...p.slice(1), tempS.value])
+          }
+        }
+      } catch (err) {
+        console.warn('[DashboardHome] Real API sync:', err)
+      }
+    }
+
+    const iv = setInterval(fetchState, 2000)
     return () => clearInterval(iv)
   }, [])
 

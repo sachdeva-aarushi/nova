@@ -10,44 +10,22 @@ function wait(ms: number): Promise<void> {
   })
 }
 
-function jitterSensors() {
+async function jitterSensors() {
   const store = useDemoStore.getState()
-  const phase = store.demoPhase
-
-  store.sensors.forEach(sensor => {
-    let jitter = (Math.random() - 0.5) * 2
-    let newValue = sensor.value + jitter
-
-    if (phase === 'detecting' || phase === 'analyzing' || phase === 'alerting') {
-      if (sensor.zone === 'Bay 3') {
-        if (sensor.type === 'H₂S') {
-          newValue = sensor.value + Math.random() * 1.5
-          newValue = Math.min(newValue, 18)
-        }
-        if (sensor.type === 'O₂') {
-          newValue = sensor.value - Math.random() * 0.3
-          newValue = Math.max(newValue, 17.5)
-        }
+  // REAL: fetched from GET /api/factory/state via backend event bus / DB
+  try {
+    const res = await fetch('/api/factory/state')
+    if (res.ok) {
+      const data = await res.json()
+      if (data && data.sensors) {
+        data.sensors.forEach((sensor: any) => {
+          store.updateSensor(sensor.sensor_id || sensor.id, sensor.value, sensor.status)
+        })
       }
     }
-
-    if (phase === 'resolving' || phase === 'resolved') {
-      if (sensor.zone === 'Bay 3') {
-        if (sensor.type === 'H₂S') {
-          newValue = sensor.value - Math.random() * 2
-          newValue = Math.max(newValue, 3.0)
-        }
-        if (sensor.type === 'O₂') {
-          newValue = sensor.value + Math.random() * 0.2
-          newValue = Math.min(newValue, 20.9)
-        }
-      }
-    }
-
-    newValue = Math.max(0, parseFloat(newValue.toFixed(1)))
-    const status = newValue > sensor.threshold ? 'critical' : newValue > sensor.threshold * 0.7 ? 'warning' : 'normal'
-    store.updateSensor(sensor.id, newValue, status)
-  })
+  } catch (err) {
+    console.warn('[demoOrchestrator] Real API sync:', err)
+  }
 }
 
 export async function runDemoSequence() {

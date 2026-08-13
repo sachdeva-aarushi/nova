@@ -160,7 +160,10 @@ export const useCaseStore = create<CaseState & any>((set) => ({
 
   appendEvidence: (items) =>
     set((prev) => ({
-      evidenceList: [...prev.evidenceList, ...items],
+      evidenceList: [
+        ...prev.evidenceList,
+        ...(Array.isArray(items) ? items : items ? [items] : []),
+      ],
     })),
 
   setLatencyMark: (key, ts) =>

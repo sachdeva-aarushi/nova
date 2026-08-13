@@ -16,14 +16,7 @@ interface Sensor {
   threshold_warn?: number; threshold_crit?: number; zone?: string
 }
 
-const DEMO_SENSORS: Sensor[] = [
-  { sensor_id:'GD-B3-01', value:147,  unit:'ppm', status:'active',   type:'gas',         threshold_warn:100, threshold_crit:200, zone:'Bay3' },
-  { sensor_id:'GD-B3-02', value:89,   unit:'ppm', status:'active',   type:'gas',         threshold_warn:100, threshold_crit:200, zone:'Bay3' },
-  { sensor_id:'T-07',     value:342,  unit:'°C',  status:'active',   type:'temperature', threshold_warn:350, threshold_crit:400, zone:'Bay1' },
-  { sensor_id:'C-14',     value:94,   unit:'%',   status:'degraded', type:'compressor',  threshold_warn:90,  threshold_crit:98,  zone:'Bay3' },
-  { sensor_id:'R-22',     value:null, unit:'bar', status:'dead',     type:'pressure',    threshold_warn:8,   threshold_crit:12,  zone:'Bay4' },
-  { sensor_id:'P-08',     value:2.1,  unit:'bar', status:'active',   type:'pressure',    threshold_warn:3,   threshold_crit:5,   zone:'Bay3' },
-]
+
 
 const COLORS = [BLUE, GREEN, AMBER, PURPLE, RED, TEAL]
 
@@ -98,12 +91,14 @@ function SensorCard({ sensor, history, color }: { sensor: Sensor; history: numbe
 }
 
 export default function SensorTelemetry() {
-  const [sensors, setSensors] = useState<Sensor[]>(DEMO_SENSORS)
+  const [sensors, setSensors] = useState<Sensor[]>([])
   const [histories, setHistories] = useState<Record<string,number[]>>({})
   const [zoneFilter, setZoneFilter] = useState('all')
   const [lastUpdate, setLastUpdate] = useState(Date.now())
+  const [error, setError] = useState<string | null>(null)
   const tickRef = useRef(0)
 
+  // REAL: subscribed to WebSocket sensorStream & GET /api/factory/state
   useEffect(() => {
     const updateHistories = (sensorList: Sensor[]) => {
       tickRef.current++
@@ -112,10 +107,7 @@ export default function SensorTelemetry() {
         sensorList.forEach(s => {
           if (s.value === null) return
           const hist = next[s.sensor_id] ?? []
-          // Add slight random walk for demo realism
-          const noise = (Math.random() - 0.5) * (s.value ?? 0) * 0.03
-          const newVal = Math.max(0, s.value + noise)
-          next[s.sensor_id] = [...hist.slice(-59), Math.round(newVal * 10) / 10]
+          next[s.sensor_id] = [...hist.slice(-59), Math.round(s.value * 10) / 10]
         })
         return next
       })
@@ -125,13 +117,19 @@ export default function SensorTelemetry() {
       try {
         const state = await getFactoryState()
         const liveSensors = (state.sensors ?? []) as Sensor[]
-        if (liveSensors.length > 0) { setSensors(liveSensors); updateHistories(liveSensors) }
-        else { setSensors(DEMO_SENSORS); updateHistories(DEMO_SENSORS) }
-      } catch { setSensors(DEMO_SENSORS); updateHistories(DEMO_SENSORS) }
+        setSensors(liveSensors)
+        updateHistories(liveSensors)
+        setError(null)
+      } catch (err) {
+        console.error('[SensorTelemetry] Real API error:', err)
+        setError(err instanceof Error ? err.message : 'Telemetry sync failed')
+        // DO NOT return fake data here
+      }
       setLastUpdate(Date.now())
     }
-    load(); const id = setInterval(load, 500); return () => clearInterval(id)
+    load(); const id = setInterval(load, 1000); return () => clearInterval(id)
   }, [])
+
 
   const zones = ['all', ...Array.from(new Set(sensors.map(s => s.zone ?? 'Unknown')))]
   const filtered = zoneFilter === 'all' ? sensors : sensors.filter(s => s.zone === zoneFilter)

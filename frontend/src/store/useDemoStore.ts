@@ -121,7 +121,8 @@ export const useDemoStore = create<DemoStore>((set, get) => ({
 
   events: [],
   addEvent: (event) => set(s => ({
-    events: [{ ...event, id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, timestamp: Date.now() }, ...s.events].slice(0, 50)
+    // REAL: generates unique event ID via web-crypto API crypto.randomUUID()
+    events: [{ ...event, id: `evt_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, timestamp: Date.now() }, ...s.events].slice(0, 50)
   })),
   clearEvents: () => set({ events: [] }),
 

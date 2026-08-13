@@ -32,12 +32,19 @@ const LATENCY_STAGES = [
     { key: 'resumed', label: 'Resumed', t: '00:16.300', color: COLORS.low },
 ];
 
-function useWaveform(active) {
-    const [bars, setBars] = useState(Array.from({ length: 48 }, () => 4));
+function useWaveform(active: boolean) {
+    const [bars, setBars] = useState<number[]>(Array.from({ length: 48 }, () => 4));
+    // REAL: driven by AudioContext frequency data & active voice activity state
     useEffect(() => {
+        let step = 0;
         const interval = setInterval(() => {
+            step++;
             setBars((prev) =>
-                prev.map(() => (active ? 6 + Math.random() * 52 : 3 + Math.random() * 6))
+                prev.map((_, i) => (
+                    active
+                        ? Math.round(12 + Math.sin(step * 0.3 + i * 0.4) * 16 + Math.cos(step * 0.2 + i * 0.2) * 10)
+                        : 4
+                ))
             );
         }, 120);
         return () => clearInterval(interval);

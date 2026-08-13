@@ -9,8 +9,16 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 
-const WS_BASE = (import.meta.env.VITE_WS_URL as string | undefined)
-  ?? 'ws://localhost:8000'
+const getWsAudioBase = (): string => {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL as string
+  }
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}`
+  }
+  return 'ws://localhost:8000'
+}
 
 export interface UseRimeAudioOptions {
   caseId?: string | null
@@ -102,7 +110,7 @@ export function useRimeAudio(
   useEffect(() => {
     if (!caseId) return
 
-    const ws = new WebSocket(`${WS_BASE}/ws/audio/${caseId}`)
+    const ws = new WebSocket(`${getWsAudioBase()}/ws/audio/${caseId}`)
     ws.binaryType = 'arraybuffer'
     wsRef.current = ws
 

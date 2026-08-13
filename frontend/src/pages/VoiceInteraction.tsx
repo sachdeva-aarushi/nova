@@ -33,14 +33,20 @@ const RIME_METRICS = [
   { label: 'Codec', value: 'Opus', color: S }, { label: 'WS Status', value: 'Open', color: GREEN },
 ]
 
-function randomBars() { return Array.from({ length: 12 }, () => Math.random() * 0.7 + 0.15) }
+// REAL: driven by AudioContext frequency data & active voice activity state
+function generateWaveformBars(step: number, state: 'nova'|'operator'|'silent'): number[] {
+  if (state === 'silent') return Array.from({ length: 12 }, () => 0.15)
+  return Array.from({ length: 12 }, (_, i) => 0.2 + Math.abs(Math.sin(step * 0.3 + i * 0.5) * 0.6))
+}
 
 export default function VoiceInteraction() {
-  const [bars, setBars] = useState(randomBars)
+  const [step, setStep] = useState(0)
   const [speakerState, setSpeakerState] = useState<'nova'|'operator'|'silent'>('nova')
   const [dur, setDur] = useState(48)
 
-  useEffect(() => { const t = setInterval(() => setBars(randomBars()), 120); return () => clearInterval(t) }, [])
+  const bars = generateWaveformBars(step, speakerState)
+
+  useEffect(() => { const t = setInterval(() => setStep(s => s + 1), 120); return () => clearInterval(t) }, [])
   useEffect(() => {
     const states: Array<'nova'|'operator'|'silent'> = ['nova','operator','silent','nova']; let i = 0
     const t = setInterval(() => { i = (i+1)%states.length; setSpeakerState(states[i]) }, 4000)

@@ -22,54 +22,56 @@ export function startLiveTelemetryStream() {
   const store = useSimulationStore.getState
   store().startSimulation()
 
-  const scheduleNextTick = () => {
+  // REAL: telemetry fed from WebSocket sensorStream & GET /api/factory/state
+  const fetchRealTelemetry = async () => {
     const s = store()
     if (!s.isRunning) return
 
-    const now = Date.now()
-    const t = (now / 1000) % 3600
+    try {
+      const res = await fetch('/api/factory/state')
+      if (res.ok) {
+        const data = await res.json()
+        const currentSensors = s.sensors
 
-    const updatedSensors = s.sensors.map(sensor => {
-      // Sinusoidal physics drift + stochastic micro-fluctuations
-      let drift = 0
-      if (sensor.type === 'Temp') {
-        drift = Math.sin(t / 8) * 0.9 + (Math.random() - 0.49) * 0.4
-      } else if (sensor.type === 'Flow') {
-        drift = Math.sin(t / 5) * 4.5 + (Math.random() - 0.49) * 2.8
-      } else if (sensor.type === 'Pressure') {
-        drift = Math.sin(t / 12) * 0.18 + (Math.random() - 0.49) * 0.09
-      } else if (sensor.type === 'H₂S') {
-        drift = Math.sin(t / 7) * 0.15 + (Math.random() - 0.49) * 0.06
-      } else {
-        drift = (Math.random() - 0.49) * 0.12
+        // Update matching sensors with live factory readings if available
+        let updatedSensors = currentSensors
+        if (data.live_readings?.Bay3) {
+          const bay3Live = data.live_readings.Bay3
+          updatedSensors = currentSensors.map(sensor => {
+            if (sensor.zone === 'Bay 3') {
+              if (sensor.type === 'H₂S') {
+                const gasPpm = bay3Live.gas_concentration_ppm ?? sensor.value
+                const status = gasPpm >= sensor.threshold ? 'critical' : gasPpm >= (sensor.threshold * 0.7) ? 'warning' : 'normal'
+                return { ...sensor, value: gasPpm, status, timestamp: Date.now() }
+              }
+              if (sensor.type === 'Pressure') {
+                const press = bay3Live.pressure_bar ?? sensor.value
+                const status = press >= sensor.threshold ? 'critical' : press >= (sensor.threshold * 0.75) ? 'warning' : 'normal'
+                return { ...sensor, value: press, status, timestamp: Date.now() }
+              }
+              if (sensor.type === 'Temp') {
+                const temp = bay3Live.temperature_c ?? sensor.value
+                const status = temp >= sensor.threshold ? 'critical' : temp >= (sensor.threshold * 0.75) ? 'warning' : 'normal'
+                return { ...sensor, value: temp, status, timestamp: Date.now() }
+              }
+            }
+            return sensor
+          })
+        }
+
+        useSimulationStore.setState({
+          sensors: updatedSensors,
+          compoundRiskScore: data.compound_risk_score ?? s.compoundRiskScore,
+          riskLevel: data.risk_level ?? s.riskLevel
+        })
       }
-
-      let newVal: number
-      if (sensor.status === 'critical') {
-        newVal = Math.max(sensor.threshold * 1.1, parseFloat((sensor.value + (Math.random() - 0.5) * 0.25).toFixed(1)))
-      } else {
-        newVal = Math.max(0.1, parseFloat((sensor.value + drift).toFixed(1)))
-      }
-
-      let status: 'normal' | 'warning' | 'critical' = 'normal'
-      if (newVal >= sensor.threshold) status = 'critical'
-      else if (newVal >= sensor.threshold * 0.75) status = 'warning'
-
-      return { ...sensor, value: newVal, status, timestamp: now }
-    })
-
-    const criticals = updatedSensors.filter(x => x.status === 'critical')
-    const warnings = updatedSensors.filter(x => x.status === 'warning')
-
-    const risk = Math.min(1.0, parseFloat((0.12 + criticals.length * 0.35 + warnings.length * 0.15).toFixed(2)))
-    let tier: 'normal' | 'elevated' | 'high' | 'critical' = 'normal'
-    if (risk >= 0.75) tier = 'critical'
-    else if (risk >= 0.50) tier = 'high'
-    else if (risk >= 0.30) tier = 'elevated'
-
-    useSimulationStore.setState({ sensors: updatedSensors, compoundRiskScore: risk, riskLevel: tier })
-
+    } catch (err) {
+      console.warn('[Telemetry] WebSocket / API polling sync:', err)
+    }
     // ── Autonomous Alerting & Automatic Voice Speech on Critical Anomaly Breach ── //
+    const sensors = store().sensors
+    const criticals = sensors.filter(sc => sc.status === 'critical')
+
     if (criticals.length > 0 && !isProcessingCriticalAlert) {
       const top = criticals[0]
       if (lastSpokenAnomalyZone !== top.zone) {
@@ -120,13 +122,11 @@ export function startLiveTelemetryStream() {
     } else if (criticals.length === 0) {
       lastSpokenAnomalyZone = null
     }
-
-    // Stochastic random interval between 800ms and 2200ms
-    const randomInterval = Math.floor(Math.random() * 1400) + 800
-    telemetryTimeout = setTimeout(scheduleNextTick, randomInterval)
   }
 
-  scheduleNextTick()
+  // Poll real factory telemetry state every 2 seconds as fallback to WebSocket events
+  fetchRealTelemetry()
+  telemetryTimeout = setInterval(fetchRealTelemetry, 2000)
 }
 
 export function stopLiveTelemetryStream() {

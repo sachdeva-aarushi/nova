@@ -285,22 +285,15 @@ Return EXACT JSON:
     except Exception as err:
         logger.error(f"Error calling Groq in answer_operator_question: {err}")
 
+    # REAL: Groq LLM pipeline response with timeout fallback (Rule G compliance)
     if not spoken_answer:
-        # Dynamic grounded response if all LLM models hit rate limit
-        if target_zone == "Bay3" or "3" in target_display:
-            spoken_answer = (
-                "Bay 3's C-14 compressor maintenance is overdue by 2 days with an active hot-work permit P-2291. "
-                "Gas concentration is elevated and requires immediate permit suspension."
-            )
-        elif target_zone == "Bay4" or "4" in target_display:
-            spoken_answer = (
-                "Bay 4 flare header pressure relief valve RV-402 is experiencing fluctuating backpressure. "
-                "No active permits are open in Bay 4 and telemetry parameters remain within threshold limits."
-            )
-        elif target_zone:
-            spoken_answer = f"Live telemetry for {target_display} indicates normal feedstock throughput with all sensors operating within nominal safety margins."
-        else:
-            spoken_answer = "All five operational bays are active across the digital twin. Plant risk score is currently nominal."
+        return {
+            "response": "Pipeline timeout — please repeat your query.",
+            "tool_calls": [],
+            "actions": [default_action],
+            "target_zone": target_display,
+            "error": "groq_timeout"
+        }
 
     # Validate closing question requirement for pending authorization turns
     if pending_action and not spoken_answer.strip().endswith("?"):

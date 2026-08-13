@@ -86,8 +86,11 @@ async def suspend_permit(case_id: str, reason: str = "") -> dict:
                     })
                 except Exception:
                     pass
+                # REAL: executes permit suspension against SQLite database
                 return {"permit_id": permit_id, "new_status": "suspended"}
     except Exception as e:
-        logger.warning("suspend_permit failed: %s", e)
+        logger.error("suspend_permit error: %s", e)
+        raise RuntimeError(f"Failed to suspend permit for case {case_id}: {str(e)}")
     return {"permit_id": None, "new_status": "no_active_permit"}
+
 

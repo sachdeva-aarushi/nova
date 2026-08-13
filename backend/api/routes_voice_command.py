@@ -92,21 +92,17 @@ async def handle_get_briefing(req: BriefingRequest):
     try:
         data = await chat_json(system_prompt, user_prompt)
         if isinstance(data, dict) and data.get("spoken_text"):
+            # REAL: queries backend LLM briefing pipeline via Groq
             return BriefingResponse(
-                salutation=str(data.get("salutation", default_salutation)),
-                summary=str(data.get("summary", default_summary)),
-                highlights=list(data.get("highlights", default_highlights)),
-                spoken_text=str(data.get("spoken_text", default_spoken))
+                salutation=str(data.get("salutation", f"Welcome back, {req.operator_name or 'Supervisor'}.")),
+                summary=str(data.get("summary", "Continuous telemetry monitoring across all 5 operational bays.")),
+                highlights=list(data.get("highlights", ["All 5 bays monitored in real-time"])),
+                spoken_text=str(data.get("spoken_text"))
             )
     except Exception as exc:
-        logger.warning(f"Groq LLM briefing generation error: {exc}. Using fallback briefing.")
+        logger.error(f"Groq LLM briefing generation error: {exc}")
+        raise HTTPException(status_code=500, detail=f"LLM briefing pipeline error: {str(exc)}")
 
-    return BriefingResponse(
-        salutation=default_salutation,
-        summary=default_summary,
-        highlights=default_highlights,
-        spoken_text=default_spoken
-    )
 
 @router.post("/command", response_model=CommandResponse)
 async def handle_voice_command(
