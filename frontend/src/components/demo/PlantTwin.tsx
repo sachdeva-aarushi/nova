@@ -650,25 +650,20 @@ export default function PlantTwin() {
         position: 'absolute', bottom: 20, left: 20,
         background: '#FFFFFF',
         border: '1px solid #C8C9C6',
-        borderRadius: 8, padding: '10px 20px',
-        display: 'flex', alignItems: 'center', gap: 16,
+        borderRadius: 8, padding: '10px 16px',
+        display: 'flex', alignItems: 'center',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
       }}>
         <div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.5rem', color: '#62636A', letterSpacing: '0.1em' }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.55rem', color: '#62636A', letterSpacing: '0.1em', fontWeight: 700 }}>
             COMPOUND RISK INDEX
           </div>
           <div style={{
-            fontFamily: "'Bebas Neue', sans-serif", fontSize: '1.8rem', lineHeight: 1,
+            fontFamily: "'Bebas Neue', sans-serif", fontSize: '1.9rem', lineHeight: 1, marginTop: '2px',
             color: compoundRiskScore > 0.7 ? '#C84B42' : compoundRiskScore > 0.4 ? '#D98A3A' : '#72856C',
           }}>
             {compoundRiskScore.toFixed(2)}
           </div>
-        </div>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.5rem', color: '#62636A', lineHeight: 1.8 }}>
-          <div>🎙 SAY "ZOOM INTO BAY 3"</div>
-          <div>🎙 SAY "SHOW PLANT OVERVIEW"</div>
-          <div>🎙 SAY "WHAT IS THE RISK STATUS"</div>
         </div>
       </div>
     </div>

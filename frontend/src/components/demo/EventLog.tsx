@@ -16,7 +16,7 @@ export default function EventLog() {
     }}>
       {/* Header */}
       <div style={{
-        padding: '14px 18px',
+        padding: '12px 14px',
         borderBottom: '1px solid #E9E9E5',
         display: 'flex',
         alignItems: 'center',
@@ -25,13 +25,14 @@ export default function EventLog() {
       }}>
         <div style={{
           fontFamily: "'JetBrains Mono', monospace",
-          fontSize: '0.65rem',
-          letterSpacing: '0.12em',
+          fontSize: '0.58rem',
+          letterSpacing: '0.08em',
           color: '#2C2D30',
           fontWeight: 800,
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
+          gap: '6px',
+          whiteSpace: 'nowrap',
         }}>
           REAL-TIME AUDIT LOG
           <span style={{

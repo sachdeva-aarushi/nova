@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useDemoStore } from '../../store/useDemoStore'
 import { useSimulationStore } from '../../store/useSimulationStore'
 
@@ -5,7 +6,19 @@ export default function NovaPresenceIndicator() {
   const isSim = useSimulationStore(s => s.isRunning)
   const store = isSim ? useSimulationStore() : useDemoStore()
 
-  const { novaState, novaCaption } = store as any
+  const { novaState, novaCaption, setNovaCaption } = store as any
+
+  // Auto-dismiss the caption speech bubble 2.5 seconds after NOVA finishes speaking
+  useEffect(() => {
+    if (novaState === 'listening' && novaCaption && !novaCaption.startsWith('🎙')) {
+      const timer = setTimeout(() => {
+        if (setNovaCaption) {
+          setNovaCaption('')
+        }
+      }, 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [novaState, novaCaption, setNovaCaption])
 
   const stateColors: Record<string, string> = {
     speaking: '#2563EB',

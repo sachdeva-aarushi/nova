@@ -110,7 +110,7 @@ EQUIPMENT_REGISTRY = {
 # ──────────────────────────────────────────────────────────────────────────────
 
 class FactoryStateManager:
-    """Maintains in-memory factory simulation state, updated by the event bus."""
+    """Maintains in-memory factory simulation state across all 5 bays, updated by the event bus and periodic anomaly simulation."""
 
     def __init__(self) -> None:
         self._t0 = time.time()
@@ -119,19 +119,28 @@ class FactoryStateManager:
         self.scenario_active = False
         self.scenario_t = 0.0
         self.last_event_ts: dict[str, float] = {}  # equipment_id → unix ts of last reading
+        
+        # Periodic anomaly generator state
+        self._tick = 0
+        self._next_anomaly_tick = random.randint(5, 6)
+        self._active_anomaly_bay: str | None = None
+        self._anomaly_expires_tick: int = 0
+        self._bays_sequence = ["Bay1", "Bay2", "Bay3", "Bay4", "Bay5"]
+        self._bay_index = 0
 
     def apply_event(self, event: dict[str, Any]) -> None:
         """Update state from a simulator event."""
         zone_id = event.get("zone_id", "")
         source = event.get("source", "")
-        value = event.get("value")
         severity = event.get("severity_hint", "normal")
 
         if zone_id:
-            if zone_id not in self.zone_overrides:
-                self.zone_overrides[zone_id] = {}
-            self.zone_overrides[zone_id]["last_event"] = event
-            self.zone_overrides[zone_id]["last_severity"] = severity
+            # Normalize zone ID format (Bay1 vs Bay 1)
+            norm_zone = zone_id.replace(" ", "")
+            if norm_zone not in self.zone_overrides:
+                self.zone_overrides[norm_zone] = {}
+            self.zone_overrides[norm_zone]["last_event"] = event
+            self.zone_overrides[norm_zone]["last_severity"] = severity
 
         # Track last reading time for dead sensor detection
         eq_id = event.get("equipment_id", source)
@@ -139,7 +148,8 @@ class FactoryStateManager:
             self.last_event_ts[eq_id] = time.time()
 
     def get_zone_risk_tier(self, zone_id: str) -> str:
-        override = self.zone_overrides.get(zone_id, {})
+        norm_zone = zone_id.replace(" ", "")
+        override = self.zone_overrides.get(norm_zone, {})
         sev = override.get("last_severity", "normal")
         if sev == "critical":
             return "critical"
@@ -147,26 +157,50 @@ class FactoryStateManager:
             return "high"
         return "low"
 
-    def get_sensor_value(self, equipment_id: str, sensor_type: str, t: float) -> float:
-        """Simulate a sensor reading with realistic drift."""
-        base = {
-            "gas_ppm": 52.0,
-            "temperature_c": 178.0,
-            "pressure_bar": 8.3,
-            "vibration_mms": 2.1,
-        }.get(sensor_type, 50.0)
+    def get_sensor_value(self, equipment_id: str, sensor_type: str, t: float, zone_id: str = "") -> float:
+        """Simulate realistic sensor channel readings with natural noise and periodic correlated anomalies."""
+        # Baseline values per sensor type / zone
+        baselines = {
+            "gas_ppm": 2.1,
+            "temperature_c": 65.0,
+            "pressure_bar": 11.2,
+            "vibration_mms": 1.4,
+            "flow_lmin": 340.0,
+        }
+        if sensor_type == "temperature_c":
+            if "Bay3" in zone_id or equipment_id in ("C-14", "P-08"):
+                baselines["temperature_c"] = 178.0
+            elif "Bay2" in zone_id or equipment_id in ("HX-01"):
+                baselines["temperature_c"] = 78.0
+            elif "Bay1" in zone_id or equipment_id in ("T-07"):
+                baselines["temperature_c"] = 85.0
+        elif sensor_type == "pressure_bar":
+            if "Bay4" in zone_id or equipment_id in ("R-22", "R-23"):
+                baselines["pressure_bar"] = 15.1
+            elif "Bay2" in zone_id or equipment_id in ("HX-01"):
+                baselines["pressure_bar"] = 14.2
+            elif "Bay3" in zone_id or equipment_id in ("C-14"):
+                baselines["pressure_bar"] = 12.8
 
-        # Apply scenario override for Bay3 gas
-        if equipment_id in ("C-14", "GD-B3-01") and sensor_type == "gas_ppm":
-            override = self.zone_overrides.get("Bay3", {})
+        base = baselines.get(sensor_type, 20.0)
+
+        # Check for event override for this zone/sensor
+        norm_zone = zone_id.replace(" ", "") if zone_id else ""
+        if norm_zone:
+            override = self.zone_overrides.get(norm_zone, {})
             if override.get("last_severity") in ("elevated", "critical"):
-                event_val = override.get("last_event", {}).get("value")
+                event_evt = override.get("last_event", {})
+                event_val = event_evt.get("value")
+                evt_source = event_evt.get("source")
                 if event_val is not None:
-                    return float(event_val)
+                    # Match source type
+                    if (sensor_type == "gas_ppm" and evt_source == "gas_sensor") or \
+                       (sensor_type in ("pressure_bar", "temperature_c") and evt_source == "scada"):
+                        return float(event_val)
 
-        # Natural drift: sin wave + small noise
-        drift = math.sin(t / 120.0) * 3.0 + random.gauss(0, 0.5)
-        return round(base + drift, 2)
+        # Natural continuous variance: sin wave drift + small Gaussian noise
+        drift = math.sin(t / 60.0 + hash(equipment_id) % 10) * (base * 0.05) + random.gauss(0, max(base * 0.01, 0.05))
+        return round(max(0.0, base + drift), 2)
 
     def is_sensor_dead(self, equipment_id: str) -> bool:
         """Sensor is 'dead' if no reading in >90s or explicitly degraded."""
@@ -175,6 +209,54 @@ class FactoryStateManager:
             return True
         last = self.last_event_ts.get(equipment_id, 0)
         return (time.time() - last) > 90 and last > 0
+
+    def tick_simulation(self) -> None:
+        """Advance periodic anomaly cycle across all bays."""
+        self._tick += 1
+
+        # Expire current anomaly if past duration
+        if self._active_anomaly_bay and self._tick >= self._anomaly_expires_tick:
+            bay = self._active_anomaly_bay
+            self.zone_overrides[bay] = {"last_severity": "normal", "last_event": None}
+            self._active_anomaly_bay = None
+
+        # Trigger new correlated anomaly every 5-6 ticks
+        if not self._active_anomaly_bay and self._tick >= self._next_anomaly_tick:
+            target_bay = self._bays_sequence[self._bay_index % len(self._bays_sequence)]
+            self._bay_index += 1
+            self._active_anomaly_bay = target_bay
+            self._anomaly_expires_tick = self._tick + random.randint(2, 3)  # Active for 2-3 ticks (~4-6s)
+            self._next_anomaly_tick = self._tick + random.randint(5, 6)
+
+            # Correlated anomaly parameters per bay
+            anomalies = {
+                "Bay1": {"source": "gas_sensor", "value": 45.2, "unit": "ppm", "severity_hint": "elevated", "permit": "PTW-0433 Active Tank Purging"},
+                "Bay2": {"source": "scada", "value": 22.4, "unit": "bar", "severity_hint": "elevated", "maintenance": "HX-01 Gasket Inspection"},
+                "Bay3": {"source": "gas_sensor", "value": 68.5, "unit": "ppm", "severity_hint": "elevated", "permit": "PTW-0441 Hot-Work Welding"},
+                "Bay4": {"source": "scada", "value": 26.8, "unit": "bar", "severity_hint": "elevated", "maintenance": "PRV-22 Overdue Calibration"},
+                "Bay5": {"source": "scada", "value": 118.5, "unit": "°C", "severity_hint": "elevated", "permit": "PTW-0430 High Pressure Finishing"},
+            }
+
+            anom_data = anomalies.get(target_bay, anomalies["Bay3"])
+            event = {
+                "event_id": f"anom_{self._tick}_{target_bay}",
+                "source": anom_data["source"],
+                "zone_id": target_bay,
+                "equipment_id": "GD-B3-01" if target_bay == "Bay3" else ("C-14" if target_bay == "Bay3" else "T-07"),
+                "ts": datetime.now(tz=timezone.utc).isoformat(),
+                "value": anom_data["value"],
+                "unit": anom_data["unit"],
+                "severity_hint": anom_data["severity_hint"],
+                "metadata": {
+                    "permit": anom_data.get("permit"),
+                    "maintenance": anom_data.get("maintenance"),
+                }
+            }
+
+            self.zone_overrides[target_bay] = {
+                "last_event": event,
+                "last_severity": anom_data["severity_hint"],
+            }
 
 
 # Global state manager instance (shared across requests)
@@ -197,7 +279,10 @@ async def get_zones() -> list[dict]:
 
 @router.get("/state")
 async def get_factory_state_endpoint() -> dict:
-    """Live factory state: zone risk tiers, sensor readings, equipment status."""
+    """Live factory state across all 5 bays: zone risk tiers, sensor readings, telemetry."""
+    # Advance periodic anomaly simulation tick
+    _state.tick_simulation()
+
     t = time.time() - _state._t0
 
     zones = []
@@ -223,32 +308,45 @@ async def get_factory_state_endpoint() -> dict:
                 "name": eq["name"],
                 "zone_id": eq["zone_id"],
                 "type": "gas_detector",
-                "value": None if dead else _state.get_sensor_value(eq_id, "gas_ppm", t),
+                "value": None if dead else _state.get_sensor_value(eq_id, "gas_ppm", t, eq["zone_id"]),
                 "unit": "ppm",
-                "status": "dead" if dead else "active",
+                "status": "dead" if dead else ("warning" if _state.get_zone_risk_tier(eq["zone_id"]) != "low" else "active"),
                 "last_reading_ts": datetime.fromtimestamp(
                     _state.last_event_ts.get(eq_id, 0), tz=timezone.utc
                 ).isoformat() if _state.last_event_ts.get(eq_id) else None,
             })
 
-    # Bay3 live sensor readings
-    bay3_gas = _state.get_sensor_value("GD-B3-01", "gas_ppm", t)
-    bay3_temp = _state.get_sensor_value("C-14", "temperature_c", t)
-    bay3_pressure = _state.get_sensor_value("C-14", "pressure_bar", t)
+    # Detailed per-bay live telemetry streams for ALL 5 BAYS
+    bays_telemetry = {}
+    bay_configs = {
+        "Bay1": ("T-07", "gas_ppm", "temperature_c", "pressure_bar"),
+        "Bay2": ("HX-01", "gas_ppm", "temperature_c", "pressure_bar"),
+        "Bay3": ("GD-B3-01", "gas_ppm", "temperature_c", "pressure_bar"),
+        "Bay4": ("R-22", "gas_ppm", "temperature_c", "pressure_bar"),
+        "Bay5": ("SEP-01", "gas_ppm", "temperature_c", "pressure_bar"),
+    }
+
+    for b_id, (eq, gas_t, temp_t, press_t) in bay_configs.items():
+        gas_v = _state.get_sensor_value(eq, gas_t, t, b_id)
+        temp_v = _state.get_sensor_value(eq, temp_t, t, b_id)
+        press_v = _state.get_sensor_value(eq, press_t, t, b_id)
+
+        bays_telemetry[b_id] = {
+            "gas_concentration_ppm": gas_v,
+            "temperature_c": temp_v,
+            "pressure_bar": press_v,
+            "gas_trend": "rising" if gas_v > 30 else "stable",
+            "lel_percent": round(gas_v / 500.0, 2),
+            "risk_tier": _state.get_zone_risk_tier(b_id),
+        }
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "zones": zones,
         "sensors": sensors,
-        "live_readings": {
-            "Bay3": {
-                "gas_concentration_ppm": bay3_gas,
-                "temperature_c": bay3_temp,
-                "pressure_bar": bay3_pressure,
-                "gas_trend": "rising" if bay3_gas > 60 else "stable",
-                "lel_percent": round(bay3_gas / 50000 * 100, 2),  # methane LEL ~50000 ppm
-            }
-        },
+        "live_readings": bays_telemetry,
+        "compound_risk_score": 0.65 if any(_state.get_zone_risk_tier(b) != "low" for b in bay_configs) else 0.12,
+        "risk_level": "elevated" if any(_state.get_zone_risk_tier(b) != "low" for b in bay_configs) else "normal",
     }
 
 
@@ -256,11 +354,9 @@ async def get_factory_state_endpoint() -> dict:
 async def get_equipment_status() -> list[dict]:
     """Equipment status with health scores, maintenance dates, and alerts."""
     result = []
-    now = datetime.now(timezone.utc)
 
     for eq_id, eq in EQUIPMENT_REGISTRY.items():
         days_since_service = eq.get("last_serviced_daysago", 0)
-        # Health score: starts at 100, decays by days since service
         health = max(0, round(100 - (days_since_service * 0.8), 1))
         overdue = days_since_service > 30
 
@@ -299,7 +395,6 @@ async def get_equipment_status() -> list[dict]:
 async def get_production_kpis() -> dict:
     """Production KPIs derived from live simulation state."""
     t = time.time() - _state._t0
-    # Realistic KPI drift
     production_rate = round(847 + math.sin(t / 300) * 23 + random.gauss(0, 2), 1)
     efficiency = round(91.4 + math.sin(t / 400) * 2.1 + random.gauss(0, 0.3), 1)
     power_kw = round(2840 + math.sin(t / 200) * 80 + random.gauss(0, 5), 0)
@@ -320,7 +415,7 @@ async def get_production_kpis() -> dict:
         "active_permits": await _get_active_permits_count(),
         "personnel_onsite": sum(personnel.values()),
         "personnel_by_zone": personnel,
-        "mtbi_hours": 2847,  # mean time between incidents (from audit log eventually)
+        "mtbi_hours": 2847,
         "last_incident_days_ago": 7,
         "shifts": {
             "current": "Day Shift — 06:00–14:00",
@@ -363,4 +458,3 @@ async def get_active_permits() -> list[dict]:
             return [dict(r) for r in rows]
     except Exception:
         return []
-

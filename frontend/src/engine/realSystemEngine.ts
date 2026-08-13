@@ -7,7 +7,7 @@
  * Employs a 1.5s AbortController budget to guarantee sub-500ms instant speech responses.
  */
 
-import { useSimulationStore } from '../store/useSimulationStore'
+import { useSimulationStore, SensorReading } from '../store/useSimulationStore'
 import { startDeepgramListening, stopDeepgramListening, deepgramSpeak, stopCurrentTTS } from './deepgramVoice'
 
 let telemetryTimeout: ReturnType<typeof setTimeout> | null = null
@@ -33,29 +33,28 @@ export function startLiveTelemetryStream() {
         const data = await res.json()
         const currentSensors = s.sensors
 
-        // Update matching sensors with live factory readings if available
+        // Update matching sensors with live factory readings for ALL 5 BAYS
         let updatedSensors = currentSensors
-        if (data.live_readings?.Bay3) {
-          const bay3Live = data.live_readings.Bay3
+        if (data.live_readings) {
           updatedSensors = currentSensors.map(sensor => {
-            if (sensor.zone === 'Bay 3') {
-              if (sensor.type === 'H₂S') {
-                const gasPpm = bay3Live.gas_concentration_ppm ?? sensor.value
-                const status = gasPpm >= sensor.threshold ? 'critical' : gasPpm >= (sensor.threshold * 0.7) ? 'warning' : 'normal'
-                return { ...sensor, value: gasPpm, status, timestamp: Date.now() }
-              }
-              if (sensor.type === 'Pressure') {
-                const press = bay3Live.pressure_bar ?? sensor.value
-                const status = press >= sensor.threshold ? 'critical' : press >= (sensor.threshold * 0.75) ? 'warning' : 'normal'
-                return { ...sensor, value: press, status, timestamp: Date.now() }
-              }
-              if (sensor.type === 'Temp') {
-                const temp = bay3Live.temperature_c ?? sensor.value
-                const status = temp >= sensor.threshold ? 'critical' : temp >= (sensor.threshold * 0.75) ? 'warning' : 'normal'
-                return { ...sensor, value: temp, status, timestamp: Date.now() }
-              }
+            const bayKey = sensor.zone.replace(/\s+/g, '') // 'Bay 1' -> 'Bay1'
+            const bayLive = data.live_readings[bayKey]
+            if (!bayLive) return sensor
+
+            let val = sensor.value
+            if (sensor.type === 'H₂S' || sensor.type === 'CH₄') {
+              val = bayLive.gas_concentration_ppm ?? sensor.value
+            } else if (sensor.type === 'Pressure') {
+              val = bayLive.pressure_bar ?? sensor.value
+            } else if (sensor.type === 'Temp') {
+              val = bayLive.temperature_c ?? sensor.value
+            } else if (sensor.type === 'Flow') {
+              val = bayLive.flow_lmin ?? sensor.value
             }
-            return sensor
+
+            const isWarn = bayLive.risk_tier && bayLive.risk_tier !== 'low'
+            const status: SensorReading['status'] = val >= sensor.threshold ? 'critical' : (isWarn || val >= (sensor.threshold * 0.7)) ? 'warning' : 'normal'
+            return { ...sensor, value: val, status, timestamp: Date.now() }
           })
         }
 

@@ -317,9 +317,9 @@ export default function RealSystemSimulation() {
           </div>
         </div>
 
-        {/* Real-time Audit Log Column (320px wide) */}
+        {/* Real-time Audit Log Column (240px wide) */}
         <div style={{
-          width: '320px',
+          width: '240px',
           height: '100%',
           borderRight: '1px solid #E9E9E5',
           background: '#FFFFFF',
