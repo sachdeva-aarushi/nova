@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { useSimulationStore } from '../store/useSimulationStore'
 import { requestMicPermission, novaSilence } from '../engine/novaSpeech'
 import { startLiveTelemetryStream, stopLiveTelemetryStream, startRealVoiceListener, stopRealVoiceListener } from '../engine/realSystemEngine'
@@ -8,6 +8,23 @@ import EvidencePanel from '../components/demo/EvidencePanel'
 import AuthorizationOverlay from '../components/demo/AuthorizationOverlay'
 import EventLog from '../components/demo/EventLog'
 import DemoOverlays from '../components/demo/DemoOverlays'
+
+interface FactoryState {
+  total_zones: number
+  active_alarms: number
+  avg_system_health: number
+  risk_trend_percent: number
+}
+
+interface Permit {
+  permit_id: string
+  permit_type: string
+  zone_id: string
+  issued_to: string
+  status: string
+  issued_at: string
+  expires_at: string
+}
 
 export default function RealSystemSimulation() {
   const {
@@ -25,6 +42,9 @@ export default function RealSystemSimulation() {
     compoundRiskScore,
   } = useSimulationStore()
 
+  const [factoryState, setFactoryState] = useState<FactoryState | null>(null)
+  const [permits, setPermits] = useState<Permit[]>([])
+
   const handleStart = useCallback(async () => {
     await requestMicPermission()
     startSimulation()
@@ -37,6 +57,63 @@ export default function RealSystemSimulation() {
     novaSilence()
     stopSimulation()
   }, [stopSimulation])
+
+  // Fetch factory state and permits data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [stateRes, permitsRes] = await Promise.all([
+          fetch('http://localhost:8000/api/factory/state'),
+          fetch('http://localhost:8000/api/permits'),
+        ])
+
+        if (stateRes.ok) {
+          const state = await stateRes.json()
+          const zoneList = Array.isArray(state.zones) ? state.zones : []
+          const liveReadings = state.live_readings && typeof state.live_readings === 'object' ? state.live_readings : {}
+          const sensorValues = Object.values(liveReadings) as Array<{ temperature_c?: number; pressure_bar?: number; gas_concentration_ppm?: number }>
+
+          const totalZones = zoneList.length || state.total_zones || 5
+          const activeAlerts = typeof state.active_alarms === 'number'
+            ? state.active_alarms
+            : zoneList.filter((zone: any) => ['elevated', 'critical', 'high'].includes(zone.risk_tier)).length
+          const avgSystemHealth = typeof state.avg_system_health === 'number'
+            ? state.avg_system_health
+            : (sensorValues.length
+                ? sensorValues.reduce((sum, reading) => {
+                    const health = 100 - ((reading.temperature_c ?? 60) - 60) * 0.4 - ((reading.pressure_bar ?? 10) - 10) * 1.3 - (reading.gas_concentration_ppm ?? 0) * 0.08
+                    return sum + Math.max(0, Math.min(100, health))
+                  }, 0) / sensorValues.length
+                : 98.6)
+          const riskTrend = typeof state.risk_trend_percent === 'number'
+            ? state.risk_trend_percent
+            : typeof state.compound_risk_score === 'number'
+              ? Math.round(state.compound_risk_score * 100)
+              : 24
+
+          setFactoryState({
+            total_zones: totalZones,
+            active_alarms: activeAlerts,
+            avg_system_health: Number(avgSystemHealth.toFixed(1)),
+            risk_trend_percent: riskTrend,
+          })
+        }
+
+        if (permitsRes.ok) {
+          const permitsData = await permitsRes.json()
+          setPermits(permitsData)
+        }
+      } catch (err) {
+        console.error('Failed to fetch factory data:', err)
+      }
+    }
+
+    if (isRunning) {
+      fetchData()
+      const interval = setInterval(fetchData, 5000) // Refresh every 5 seconds
+      return () => clearInterval(interval)
+    }
+  }, [isRunning])
 
   useEffect(() => {
     handleStart()
@@ -51,9 +128,21 @@ export default function RealSystemSimulation() {
     return <SimulationLanding onStart={handleStart} />
   }
 
-  const h2s = sensors.find(s => s.type === 'H₂S' && s.zone === (focusedZone || 'Bay 3'))
-  const press = sensors.find(s => s.type === 'Pressure' && s.zone === (focusedZone || 'Bay 3'))
-  const temp = sensors.find(s => s.type === 'Temp' && s.zone === (focusedZone || 'Bay 3'))
+  const fallbackBay = sensors.find(s => s.status !== 'normal')?.zone || sensors[0]?.zone || 'Bay 1'
+  const focusedBay = focusedZone || fallbackBay
+  const baySensors = sensors.filter(s => s.zone === focusedBay)
+  const h2s = baySensors.find(s => s.type === 'H₂S') || baySensors.find(s => s.type === 'CH₄')
+  const press = baySensors.find(s => s.type === 'Pressure')
+  const temp = baySensors.find(s => s.type === 'Temp')
+  const flow = baySensors.find(s => s.type === 'Flow')
+
+  // Calculate metrics from the live backend plant state and the actual sensor set.
+  const totalBays = factoryState?.total_zones || Math.max(1, new Set(sensors.map(sensor => sensor.zone)).size)
+  const activeAlerts = factoryState?.active_alarms ?? sensors.filter(s => s.status !== 'normal').length
+  const systemHealth = factoryState?.avg_system_health ?? 98.6
+  const riskTrend = factoryState?.risk_trend_percent ?? Math.round((compoundRiskScore || 0.12) * 100)
+  const activePermits = permits.filter(p => p.status === 'active')
+  const permitPreview = activePermits.slice(0, 3)
 
   return (
     <div style={{
@@ -350,7 +439,7 @@ export default function RealSystemSimulation() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#D9534F' }} />
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.85rem', fontWeight: 800, color: '#2C2D30', letterSpacing: '0.04em' }}>
-                {focusedZone ? focusedZone.toUpperCase() : 'BAY 3 - COMPRESSOR C-14 ZONE'}
+                {focusedBay.toUpperCase()} LIVE STATUS
               </span>
               <span style={{
                 fontFamily: "'JetBrains Mono', monospace",
@@ -416,15 +505,15 @@ export default function RealSystemSimulation() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.4rem', fontWeight: 800, color: '#2C2D30', lineHeight: 1 }}>12</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.4rem', fontWeight: 800, color: '#2C2D30', lineHeight: 1 }}>{totalBays}</div>
                   <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.5rem', color: '#8E9096', marginTop: '4px' }}>Total Bays</div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.4rem', fontWeight: 800, color: '#D98A3A', lineHeight: 1 }}>3</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.4rem', fontWeight: 800, color: '#D98A3A', lineHeight: 1 }}>{activeAlerts}</div>
                   <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.5rem', color: '#8E9096', marginTop: '4px' }}>Active Alerts</div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.4rem', fontWeight: 800, color: '#72856C', lineHeight: 1 }}>98.6%</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '1.4rem', fontWeight: 800, color: '#72856C', lineHeight: 1 }}>{systemHealth.toFixed(1)}%</div>
                   <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.5rem', color: '#8E9096', marginTop: '4px' }}>System Health</div>
                 </div>
               </div>
@@ -443,9 +532,9 @@ export default function RealSystemSimulation() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.55rem', color: '#8E9096', letterSpacing: '0.08em', fontWeight: 800 }}>
-                  RISK TREND (BAY 3)
+                  RISK TREND ({focusedBay.toUpperCase()})
                 </div>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.55rem', color: '#D98A3A', fontWeight: 800 }}>↑ 24%</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.55rem', color: '#D98A3A', fontWeight: 800 }}>↑ {riskTrend}%</span>
               </div>
               {/* Sparkline curve */}
               <div style={{ height: '45px', width: '100%', margin: '4px 0' }}>
@@ -474,21 +563,15 @@ export default function RealSystemSimulation() {
                 ACTIVE PERMITS
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '4px 0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
-                  <span style={{ color: '#D9534F', fontWeight: 700 }}>● PTW-0441</span>
-                  <span style={{ color: '#62636A' }}>Hot-Work - Bay 3</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#A0A2A8', fontSize: '0.55rem' }}>16:00</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
-                  <span style={{ color: '#72856C', fontWeight: 700 }}>● PTW-0433</span>
-                  <span style={{ color: '#62636A' }}>Maintenance - Bay 1</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#A0A2A8', fontSize: '0.55rem' }}>15:30</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
-                  <span style={{ color: '#72856C', fontWeight: 700 }}>● PTW-0430</span>
-                  <span style={{ color: '#62636A' }}>Electrical - Bay 2</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#A0A2A8', fontSize: '0.55rem' }}>14:45</span>
-                </div>
+                {permitPreview.length === 0 ? (
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.62rem', color: '#62636A' }}>No active permits in the live plant record.</div>
+                ) : permitPreview.map((permit) => (
+                  <div key={permit.permit_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
+                    <span style={{ color: permit.status === 'active' ? '#D9534F' : '#72856C', fontWeight: 700 }}>● {permit.permit_id}</span>
+                    <span style={{ color: '#62636A' }}>{permit.permit_type} - {permit.zone_id}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#A0A2A8', fontSize: '0.55rem' }}>{permit.expires_at ? new Date(permit.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'LIVE'}</span>
+                  </div>
+                ))}
               </div>
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.62rem', color: '#2C2D30', fontWeight: 700, cursor: 'pointer' }}>
                 View all permits →
@@ -507,24 +590,24 @@ export default function RealSystemSimulation() {
               justifyContent: 'space-between',
             }}>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '0.55rem', color: '#8E9096', letterSpacing: '0.08em', fontWeight: 800 }}>
-                LIVE METRICS (BAY 3)
+                LIVE METRICS ({focusedBay.toUpperCase()})
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '4px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
                   <span style={{ color: '#62636A' }}>H₂S Level</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#D9534F', fontWeight: 700 }}>{h2s?.value ?? 5.2} ppm</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#D9534F', fontWeight: 700 }}>{h2s?.value ?? 0} ppm</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
-                  <span style={{ color: '#62636A' }}>O₂ Level</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#D9534F', fontWeight: 700 }}>21.8 %</span>
+                  <span style={{ color: '#62636A' }}>Flow</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#2C2D30', fontWeight: 700 }}>{flow?.value ?? 0} {flow?.unit ?? 'L/min'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
                   <span style={{ color: '#62636A' }}>Temperature</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#2C2D30', fontWeight: 700 }}>{temp?.value ?? 38.6} °C</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#2C2D30', fontWeight: 700 }}>{temp?.value ?? 0} {temp?.unit ?? '°C'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', fontFamily: "'Inter', sans-serif" }}>
                   <span style={{ color: '#62636A' }}>Pressure</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#2C2D30', fontWeight: 700 }}>{press?.value ?? 3.8} barg</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#2C2D30', fontWeight: 700 }}>{press?.value ?? 0} {press?.unit ?? 'bar'}</span>
                 </div>
               </div>
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: '0.62rem', color: '#2C2D30', fontWeight: 700, cursor: 'pointer' }}>

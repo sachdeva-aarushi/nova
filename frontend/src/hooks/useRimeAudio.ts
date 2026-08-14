@@ -7,6 +7,7 @@
  * Usage:
  *   const { isPlaying, bargeIn } = useRimeAudio(caseId)
  */
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiUrl } from '../services/api'
 
 const getWsAudioBase = (): string => {

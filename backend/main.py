@@ -30,14 +30,16 @@ if _repo_root not in sys.path:
 
 load_dotenv()  # noqa: E402 — must run before any os.environ reads
 
-from backend.api import routes_cases, routes_demo, routes_memory, routes_retrieval, routes_risk, routes_voice, routes_voice_command, routes_explainability, routes_readings
+from backend.api import routes_cases, routes_debug, routes_demo, routes_memory, routes_retrieval, routes_risk, routes_voice, routes_voice_command, routes_explainability, routes_readings
 from backend.services.sensor_generator import SensorGenerator
 from backend.api.ws_session import manager
 from backend.api.routes_factory import router as factory_router, get_factory_state
 from backend.api.ws_session import router as ws_router, start_ws_bridge
 from backend.api.ws_audio import router as audio_router
 from backend.bus.event_bus import bus
-from backend.db.db import init_db, seed_demo_cases
+from backend.db.db import init_db, seed_demo_cases, get_db
+from backend.debug_transport import debug_transport
+from datetime import datetime, timezone
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,6 +61,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await bus.start()
     await start_ws_bridge(bus)
+
+    # Enable debug transport in development mode
+    if os.environ.get("APP_ENV", "development") == "development":
+        await debug_transport.enable()
+        logger.info("✅ Debug transport enabled for development")
+
 
     # Pre-warm embedding model in background if enabled (disabled by default to prevent OOM on 512MB cloud free tier)
     if os.environ.get("ENABLE_PREWARM_EMBEDDINGS", "false").lower() in ("true", "1"):
@@ -214,6 +222,7 @@ app.include_router(routes_voice.router,      prefix=_API_PREFIX)
 app.include_router(routes_voice_command.router, prefix=_API_PREFIX)
 app.include_router(routes_memory.router,     prefix=_API_PREFIX)
 app.include_router(routes_demo.router,       prefix=_API_PREFIX)
+app.include_router(routes_debug.router)      # Debug endpoints (no prefix, has own)
 app.include_router(routes_explainability.router)
 app.include_router(routes_readings.router)
 
