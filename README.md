@@ -122,7 +122,6 @@ Every component was chosen to build and demo at zero cost. Full rationale for ea
 
 **Qdrant** is one of the system's intellectual cores, not a decorative vector store. Its retrieval score is a direct, causal input to the compound-risk tier — removing it removes NOVA's only source of knowing whether a given combination of signals has mattered before. Eight purpose-built collections separate live case memory from long-term organizational memory, with hybrid dense and lexical search and payload filtering so retrieval is precise, not merely topical.
 
-**Weya** is referenced in the official Track 1 materials as a learning resource, not a provided API. NOVA is explicit about this distinction: its escalation ladder, callback scheduling, and human-handoff design are Weya-inspired and independently implemented — never claimed as a live integration unless API access is explicitly confirmed.
 
 ## Getting Started
 
