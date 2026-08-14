@@ -183,6 +183,7 @@ _allowed_origins: list[str] = [
     "http://127.0.0.1:5174",
     "http://localhost:5175",
     "http://127.0.0.1:5175",
+    "*",
 ]
 _vite_origin = os.environ.get("VITE_ORIGIN", "")
 if _vite_origin and _vite_origin not in _allowed_origins:
@@ -230,9 +231,10 @@ async def health() -> dict:
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 
+    port = int(os.environ.get("PORT", os.environ.get("API_PORT", 8000)))
     uvicorn.run(
         "backend.main:app",
         host=os.environ.get("API_HOST", "0.0.0.0"),
-        port=int(os.environ.get("API_PORT", "8000")),
-        reload=True,
+        port=port,
+        reload=False,
     )
