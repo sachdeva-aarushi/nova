@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState } from 'react'
 import { useSimulationStore } from '../store/useSimulationStore'
 import { requestMicPermission, novaSilence } from '../engine/novaSpeech'
 import { startLiveTelemetryStream, stopLiveTelemetryStream, startRealVoiceListener, stopRealVoiceListener } from '../engine/realSystemEngine'
+import { getApiUrl } from '../services/api'
 import PlantTwin from '../components/demo/PlantTwin'
 import NovaPresenceIndicator from '../components/demo/NovaPresenceIndicator'
 import EvidencePanel from '../components/demo/EvidencePanel'
@@ -63,8 +64,8 @@ export default function RealSystemSimulation() {
     const fetchData = async () => {
       try {
         const [stateRes, permitsRes] = await Promise.all([
-          fetch('http://localhost:8000/api/factory/state'),
-          fetch('http://localhost:8000/api/permits'),
+          fetch(getApiUrl('/api/factory/state')),
+          fetch(getApiUrl('/api/permits')),
         ])
 
         if (stateRes.ok) {

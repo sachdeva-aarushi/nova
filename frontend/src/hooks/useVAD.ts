@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useCaseStore } from '../store/useCaseStore'
+import { getApiUrl } from '../services/api'
 
-const API_BASE: string = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000/api'
+const API_BASE: string = getApiUrl('/api')
 
 
 interface UseVADProps {
