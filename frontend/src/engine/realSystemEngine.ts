@@ -201,8 +201,9 @@ function executeActions(actions: string[]) {
       store.setOverlayView('audit')
     } else if (action === 'SHOW_SIGNALS') {
       store.setOverlayView('signals')
-    } else if (action === 'AUTHORIZE' || action.startsWith('REVOKE') || action.startsWith('CANCEL')) {
-      (store as any).clearBayRisk()
+    } else if (action === 'AUTHORIZE' || action.startsWith('REVOKE') || action.startsWith('CANCEL') || action === 'CANCEL_PERMIT') {
+      store.clearBayRisk()
+      fetch('/api/cases/case-bay3/authorize', { method: 'POST' }).catch(() => {})
     } else if (action === 'REJECT') {
       store.rejectAction()
     }
@@ -230,6 +231,27 @@ export function startRealVoiceListener() {
       risk: 'normal',
     })
 
+    // Instant Sub-50ms Client-Side Intent Execution
+    const lower = text.toLowerCase()
+    const bayMatch = lower.match(/(?:bay|zone|b)\s*([1-5])/)
+    
+    if (lower.includes('cancel') || lower.includes('revoke') || lower.includes('suspend') || lower.includes('authorize') || lower.includes('stop hot work') || lower.includes('clear risk')) {
+      const targetZone = bayMatch ? `Bay ${bayMatch[1]}` : (store.focusedZone || 'Bay 3')
+      store.clearBayRisk(targetZone)
+      fetch('/api/cases/case-bay3/authorize', { method: 'POST' }).catch(() => {})
+    } else if (bayMatch && (lower.includes('zoom') || lower.includes('focus') || lower.includes('show') || lower.includes('go to'))) {
+      store.focusZone(`Bay ${bayMatch[1]}`)
+    } else if (lower.includes('zoom out') || lower.includes('reset') || lower.includes('plant view') || lower.includes('overview')) {
+      store.resetView()
+    } else if (lower.includes('track') || lower.includes('history') || lower.includes('past') || lower.includes('lesson') || lower.includes('memory')) {
+      store.setOverlayView('tracks')
+    } else if (lower.includes('audit')) {
+      store.setOverlayView('audit')
+    } else if (lower.includes('signal')) {
+      store.setOverlayView('signals')
+    }
+
+    // Send query to Grounded Multi-Agent Brain
     generateReActResponse(text)
       .then(result => {
         executeActions(result.actions)

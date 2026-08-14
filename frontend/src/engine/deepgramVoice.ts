@@ -37,10 +37,10 @@ function isSelfEcho(text: string): boolean {
 
   const store = useSimulationStore.getState()
   const caption = (store.novaCaption || store.novaMessage || '').toLowerCase().replace(/[^a-z0-9\s]/g, '')
-  if (!caption) return true // If speaking but caption is not set yet, suppress to prevent hearing self
+  if (!caption) return false
 
   const textClean = text.toLowerCase().replace(/[^a-z0-9\s]/g, '')
-  if (!textClean) return true
+  if (!textClean) return false
 
   if (caption.includes(textClean) || textClean.includes(caption)) return true
 
@@ -96,7 +96,7 @@ export async function startDeepgramListening(
     const timestamp = new Date().toISOString()
     console.log(`[Deepgram STT ${timestamp}] Opening WebSocket connection to Deepgram...`)
 
-    dgSocket = new WebSocket(wsUrl, ['token', DEEPGRAM_API_KEY])
+    dgSocket = new WebSocket(wsUrl)
     dgSocket.binaryType = 'arraybuffer'
 
     dgSocket.onopen = () => {

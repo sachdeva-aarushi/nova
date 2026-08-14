@@ -61,6 +61,7 @@ class SensorGenerator:
         self.ws_manager = ws_manager
         self.orchestrator = orchestrator
         self.cycle_num = 0
+        self.zone_idx = 0
         self.next_spike_cycle = self._pick_next_spike_cycle()
 
         # Track current value per zone+sensor (random walk state)
@@ -71,8 +72,8 @@ class SensorGenerator:
                 self.current_values[key] = (cfg["min"] + cfg["max"]) / 2.0
 
     def _pick_next_spike_cycle(self) -> int:
-        """Schedule the next anomaly: 4–5 cycles from now."""
-        return self.cycle_num + random.randint(4, 5)
+        """Schedule the next anomaly: 12 cycles (60 seconds / 1 minute) from now."""
+        return self.cycle_num + 12
 
     def _random_walk(self, key: str, sensor_type: str) -> float:
         """Move current value by a small realistic delta, stay in bounds."""
@@ -105,7 +106,9 @@ class SensorGenerator:
         self.cycle_num += 1
         is_spike_cycle = (self.cycle_num >= self.next_spike_cycle)
 
-        spike_zone = random.choice(ZONES) if is_spike_cycle else None
+        spike_zone = ZONES[self.zone_idx % len(ZONES)] if is_spike_cycle else None
+        if is_spike_cycle:
+            self.zone_idx += 1
         spike_sensor = random.choice(list(SENSOR_CONFIG.keys())) if is_spike_cycle else None
 
         readings_this_cycle: list[dict[str, Any]] = []

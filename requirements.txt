@@ -1,38 +1,34 @@
 # ==========================================
-# NOVA — Backend Dependencies
+# NOVA — Complete Backend & ML Dependencies
 # ==========================================
 
-# Backend API / WebSocket
-fastapi
-uvicorn[standard]
-websockets
-aiosqlite
+# Web Framework & Async Server
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+websockets>=11.0
+aiosqlite>=0.19.0
 
-# Data Models / Validation
-pydantic
+# Data Validation & Configuration
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+PyYAML>=6.0
 
-# Configuration
-python-dotenv
-pydantic-settings
-PyYAML
+# Vector Database (Qdrant)
+qdrant-client>=1.7.0
 
-# Qdrant Vector Memory
-qdrant-client
+# AI / ML / Embeddings / Reranking
+torch>=2.0.0
+transformers>=4.30.0
+sentence-transformers>=2.2.2
+faster-whisper>=0.10.0
+numpy>=1.24.0
 
-# Embeddings
-sentence-transformers
+# HTTP & API Clients
+httpx>=0.24.0
+requests>=2.28.0
 
-# Reranking
-transformers
-torch
-
-# Local Speech-to-Text
-faster-whisper
-
-# HTTP / External Services
-httpx
-
-# Testing
-pytest
-pytest-asyncio
-respx
+# Testing & Mocks
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+respx>=0.20.0

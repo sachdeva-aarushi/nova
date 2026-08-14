@@ -120,11 +120,12 @@ class FactoryStateManager:
         self.scenario_t = 0.0
         self.last_event_ts: dict[str, float] = {}  # equipment_id → unix ts of last reading
         
-        # Periodic anomaly generator state
-        self._tick = 0
-        self._next_anomaly_tick = random.randint(5, 6)
+        # Periodic 1-minute anomaly generator state across plant bays
+        self.last_anomaly_time = time.time() - 45.0  # First anomaly 15s after startup
+        self.anomaly_interval_sec = 60.0  # Anomaly every 1 minute
+        self.anomaly_duration_sec = 10.0  # Active anomaly duration
         self._active_anomaly_bay: str | None = None
-        self._anomaly_expires_tick: int = 0
+        self._anomaly_start_time: float = 0.0
         self._bays_sequence = ["Bay1", "Bay2", "Bay3", "Bay4", "Bay5"]
         self._bay_index = 0
 
@@ -211,22 +212,22 @@ class FactoryStateManager:
         return (time.time() - last) > 90 and last > 0
 
     def tick_simulation(self) -> None:
-        """Advance periodic anomaly cycle across all bays."""
-        self._tick += 1
+        """Advance periodic 1-minute anomaly cycle across all 5 plant bays."""
+        now = time.time()
 
-        # Expire current anomaly if past duration
-        if self._active_anomaly_bay and self._tick >= self._anomaly_expires_tick:
+        # Expire current anomaly if past duration (returns bay to normal)
+        if self._active_anomaly_bay and (now - self._anomaly_start_time) >= self.anomaly_duration_sec:
             bay = self._active_anomaly_bay
             self.zone_overrides[bay] = {"last_severity": "normal", "last_event": None}
             self._active_anomaly_bay = None
 
-        # Trigger new correlated anomaly every 5-6 ticks
-        if not self._active_anomaly_bay and self._tick >= self._next_anomaly_tick:
+        # Trigger new correlated anomaly every 60 seconds (1 minute) across the plant
+        if not self._active_anomaly_bay and (now - self.last_anomaly_time) >= self.anomaly_interval_sec:
             target_bay = self._bays_sequence[self._bay_index % len(self._bays_sequence)]
             self._bay_index += 1
             self._active_anomaly_bay = target_bay
-            self._anomaly_expires_tick = self._tick + random.randint(2, 3)  # Active for 2-3 ticks (~4-6s)
-            self._next_anomaly_tick = self._tick + random.randint(5, 6)
+            self.last_anomaly_time = now
+            self._anomaly_start_time = now
 
             # Correlated anomaly parameters per bay
             anomalies = {
@@ -239,7 +240,7 @@ class FactoryStateManager:
 
             anom_data = anomalies.get(target_bay, anomalies["Bay3"])
             event = {
-                "event_id": f"anom_{self._tick}_{target_bay}",
+                "event_id": f"anom_{int(now)}_{target_bay}",
                 "source": anom_data["source"],
                 "zone_id": target_bay,
                 "equipment_id": "GD-B3-01" if target_bay == "Bay3" else ("C-14" if target_bay == "Bay3" else "T-07"),
