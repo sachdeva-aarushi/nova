@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -34,13 +35,34 @@ class DebugTransport:
 
     def __init__(self) -> None:
         self.enabled = False
-        self._events_published: list[dict[str, Any]] = []
-        self._broadcasts: list[dict[str, Any]] = []
-        self._ws_messages: list[dict[str, Any]] = []
+        self.max_events = 200
+        self.max_broadcasts = 200
+        self.max_ws_messages = 200
+        self._events_published: deque[dict[str, Any]] = deque(maxlen=self.max_events)
+        self._broadcasts: deque[dict[str, Any]] = deque(maxlen=self.max_broadcasts)
+        self._ws_messages: deque[dict[str, Any]] = deque(maxlen=self.max_ws_messages)
         self._original_bus_publish: Callable | None = None
         self._original_bus_subscribe: Callable | None = None
         self._original_manager_broadcast: Callable | None = None
         self._original_ws_send_json: Callable | None = None
+
+    def record_event(self, entry: dict[str, Any]) -> None:
+        """Store only the most recent activity for diagnostics."""
+        if len(self._events_published) >= self.max_events:
+            self._events_published.popleft()
+        self._events_published.append(entry)
+
+    def record_broadcast(self, entry: dict[str, Any]) -> None:
+        """Store only the most recent broadcast activity."""
+        if len(self._broadcasts) >= self.max_broadcasts:
+            self._broadcasts.popleft()
+        self._broadcasts.append(entry)
+
+    def record_ws_message(self, entry: dict[str, Any]) -> None:
+        """Store only the most recent websocket activity."""
+        if len(self._ws_messages) >= self.max_ws_messages:
+            self._ws_messages.popleft()
+        self._ws_messages.append(entry)
 
     async def enable(self) -> None:
         """Patch the event bus, WebSocket manager, and connection manager."""
@@ -62,7 +84,7 @@ class DebugTransport:
                 "subscribers_count": len(bus._subscribers.get(topic, [])),
                 "matched_subscriptions": self._count_matches(topic),
             }
-            self._events_published.append(entry)
+            self.record_event(entry)
             logger.info(
                 "🔵 EventBus.publish(%s) — %d/%d subscribers | event=%s",
                 topic,
@@ -86,7 +108,7 @@ class DebugTransport:
                 "payload": message.get("payload"),
                 "connection_count": len(manager._connections.get(session_id, set())),
             }
-            self._broadcasts.append(entry)
+            self.record_broadcast(entry)
             logger.info(
                 "📤 WS broadcast(%s) type=%s → %d connections",
                 session_id,
@@ -110,7 +132,7 @@ class DebugTransport:
                 "total_connections": total_conns,
                 "sessions": len(manager._connections),
             }
-            self._broadcasts.append(entry)
+            self.record_broadcast(entry)
             logger.info(
                 "📤 WS broadcast_all(%s) → %d total connections across %d sessions",
                 msg_type,
@@ -150,8 +172,8 @@ class DebugTransport:
             "events_published_count": len(self._events_published),
             "broadcasts_count": len(self._broadcasts),
             "ws_messages_count": len(self._ws_messages),
-            "recent_events": self._events_published[-10:] if self._events_published else [],
-            "recent_broadcasts": self._broadcasts[-10:] if self._broadcasts else [],
+            "recent_events": list(self._events_published)[-10:] if self._events_published else [],
+            "recent_broadcasts": list(self._broadcasts)[-10:] if self._broadcasts else [],
             "by_topic": self._group_by_topic(),
             "by_broadcast_type": self._group_broadcasts_by_type(),
         }

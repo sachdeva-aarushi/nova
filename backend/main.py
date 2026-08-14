@@ -11,6 +11,7 @@ Startup sequence
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -62,16 +63,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await bus.start()
     await start_ws_bridge(bus)
 
-    # Enable debug transport in development mode
-    if os.environ.get("APP_ENV", "development") == "development":
+    # Debug transport is intentionally off unless explicitly enabled.
+    # Production runs must set ENABLE_DEBUG_TRANSPORT=true only when a one-off debug session is needed.
+    debug_enabled = os.environ.get("ENABLE_DEBUG_TRANSPORT", "false").lower() in ("true", "1", "yes")
+    if debug_enabled:
         await debug_transport.enable()
-        logger.info("✅ Debug transport enabled for development")
+        logger.info("✅ Debug transport enabled explicitly via ENABLE_DEBUG_TRANSPORT=true")
+    else:
+        logger.info("ℹ️ Debug transport disabled; APP_ENV is not used to activate it")
 
 
     # Pre-warm embedding model in background if enabled (disabled by default to prevent OOM on 512MB cloud free tier)
     if os.environ.get("ENABLE_PREWARM_EMBEDDINGS", "false").lower() in ("true", "1"):
         try:
-            import asyncio
             from backend.memory.embeddings import embed_text
             asyncio.create_task(asyncio.to_thread(embed_text, "init"))
         except Exception as exc:
