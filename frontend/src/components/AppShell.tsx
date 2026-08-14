@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { startLiveTelemetryStream, stopLiveTelemetryStream } from '../engine/realSystemEngine'
 import {
   LayoutDashboard, Radio, Database, Mic2, ShieldCheck,
   FileText, BookOpen, Home, WifiOff, Cpu, ChevronRight, Wifi,
@@ -33,13 +34,18 @@ export default function AppShell() {
   const setActiveCase = useCaseStore(s => s.setActiveCase)
   const connectionStatus = useCaseStore(s => s.connectionStatus)
 
-  // Auto-fetch cases on load and pick the first one
+  // Auto-start live telemetry stream & fetch cases on load
   useEffect(() => {
+    startLiveTelemetryStream()
     getCases().then(cases => {
       if (cases.length > 0 && !activeCase) {
         setActiveCase(cases[0])
       }
     }).catch(err => console.error("Failed to fetch cases:", err))
+
+    return () => {
+      stopLiveTelemetryStream()
+    }
   }, [activeCase, setActiveCase])
 
   // Connect websocket for the active case

@@ -26,8 +26,6 @@ export function startLiveTelemetryStream() {
   // REAL: telemetry fed from WebSocket sensorStream & GET /api/factory/state
   const fetchRealTelemetry = async () => {
     const s = store()
-    if (!s.isRunning) return
-
     try {
       const res = await fetch(getApiUrl('/api/factory/state'))
       if (res.ok) {

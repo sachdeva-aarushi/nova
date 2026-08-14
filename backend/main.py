@@ -60,13 +60,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await bus.start()
     await start_ws_bridge(bus)
 
-    # Pre-warm embedding model in background so first voice query doesn't time out
-    try:
-        import asyncio
-        from backend.memory.embeddings import embed_text
-        asyncio.create_task(asyncio.to_thread(embed_text, "init"))
-    except Exception as exc:
-        logger.warning("Failed to pre-warm embeddings: %s", exc)
+    # Pre-warm embedding model in background if enabled (disabled by default to prevent OOM on 512MB cloud free tier)
+    if os.environ.get("ENABLE_PREWARM_EMBEDDINGS", "false").lower() in ("true", "1"):
+        try:
+            import asyncio
+            from backend.memory.embeddings import embed_text
+            asyncio.create_task(asyncio.to_thread(embed_text, "init"))
+        except Exception as exc:
+            logger.warning("Failed to pre-warm embeddings: %s", exc)
 
     # Start 5-second SensorGenerator background loop
     try:
