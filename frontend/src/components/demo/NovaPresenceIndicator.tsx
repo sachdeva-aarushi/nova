@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { useDemoStore } from '../../store/useDemoStore'
 import { useSimulationStore } from '../../store/useSimulationStore'
+import { startRealVoiceListener, stopRealVoiceListener } from '../../engine/realSystemEngine'
+import { stopCurrentTTS } from '../../engine/deepgramVoice'
 
 export default function NovaPresenceIndicator() {
   const isSim = useSimulationStore(s => s.isRunning)
@@ -8,14 +10,14 @@ export default function NovaPresenceIndicator() {
 
   const { novaState, novaCaption, setNovaCaption } = store as any
 
-  // Auto-dismiss the caption speech bubble 2.5 seconds after NOVA finishes speaking
+  // Auto-dismiss the caption speech bubble 3.5 seconds after NOVA finishes speaking
   useEffect(() => {
-    if (novaState === 'listening' && novaCaption && !novaCaption.startsWith('🎙')) {
+    if (novaState === 'idle' && novaCaption && !novaCaption.startsWith('🎙')) {
       const timer = setTimeout(() => {
         if (setNovaCaption) {
           setNovaCaption('')
         }
-      }, 2500)
+      }, 3500)
       return () => clearTimeout(timer)
     }
   }, [novaState, novaCaption, setNovaCaption])
@@ -28,14 +30,28 @@ export default function NovaPresenceIndicator() {
   }
 
   const stateLabels: Record<string, string> = {
-    speaking: 'NOVA · SPEAKING',
+    speaking: 'NOVA · SPEAKING (TAP TO STOP)',
     processing: 'NOVA · THINKING',
-    listening: 'NOVA · LISTENING',
-    idle: 'NOVA · IDLE',
+    listening: 'NOVA · LISTENING (TAP TO STOP)',
+    idle: 'TAP TO SPEAK TO NOVA',
   }
 
   const dotColor = stateColors[novaState] || '#0D9488'
-  const isInterim = novaCaption?.startsWith('🎙')
+  const isUserSpeech = novaCaption?.startsWith('[USER]') || novaCaption?.startsWith('🎙')
+  const displayText = isUserSpeech ? novaCaption.replace(/^(\[USER\]|🎙)\s*/, '') : novaCaption
+
+  const handleMicToggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (novaState === 'speaking') {
+      stopCurrentTTS()
+    } else if (novaState === 'listening') {
+      stopRealVoiceListener()
+      if (store.setNovaState) store.setNovaState('idle')
+    } else {
+      if (store.setNovaState) store.setNovaState('listening')
+      startRealVoiceListener()
+    }
+  }
 
   return (
     <div style={{
@@ -53,44 +69,62 @@ export default function NovaPresenceIndicator() {
       {novaCaption && (
         <div style={{
           background: '#FFFFFF',
-          border: `1px solid ${isInterim ? '#C8C9C6' : '#0D9488'}`,
-          borderRadius: '10px',
+          border: `2px solid ${isUserSpeech ? '#0D9488' : '#2563EB'}`,
+          borderRadius: '12px',
           padding: '14px 20px',
-          maxWidth: '440px',
-          color: isInterim ? '#62636A' : '#0E0D1F',
+          maxWidth: '460px',
+          color: '#0E0D1F',
           fontFamily: "'Titillium Web', sans-serif",
-          fontSize: isInterim ? '0.8rem' : '0.9rem',
+          fontSize: '0.92rem',
           lineHeight: 1.5,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
           animation: 'fade-up 0.3s ease both',
           transition: 'all 0.2s ease',
-          fontStyle: isInterim ? 'italic' : 'normal',
+          pointerEvents: 'auto',
         }}>
           <div style={{
             fontFamily: "'JetBrains Mono', monospace",
-            fontSize: '0.55rem',
-            color: isInterim ? '#62636A' : '#0D9488',
+            fontSize: '0.58rem',
+            color: isUserSpeech ? '#0D9488' : '#2563EB',
             letterSpacing: '0.12em',
             marginBottom: '6px',
-            fontWeight: 700,
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
           }}>
-            {isInterim ? '🎙 DEEPGRAM STT — HEARING...' : 'NOVA VOICE INTELLIGENCE'}
+            <span style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: isUserSpeech ? '#0D9488' : '#2563EB',
+            }} />
+            {isUserSpeech ? 'OPERATOR VOICE INPUT' : 'NOVA VOICE INTELLIGENCE'}
           </div>
-          {novaCaption}
+          "{displayText}"
         </div>
       )}
 
-      {/* Status pill */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        background: '#FFFFFF',
-        border: `1px solid ${novaState === 'speaking' ? 'rgba(37,99,235,0.4)' : novaState === 'processing' ? 'rgba(217,138,58,0.4)' : 'rgba(13,148,136,0.4)'}`,
-        borderRadius: '30px',
-        padding: '8px 18px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
-      }}>
+      {/* Interactive Tap-to-Talk Mic Toggle Button */}
+      <button
+        onClick={handleMicToggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          background: '#FFFFFF',
+          border: `2px solid ${novaState === 'speaking' ? '#2563EB' : novaState === 'processing' ? '#D98A3A' : novaState === 'listening' ? '#0D9488' : '#8E9096'}`,
+          borderRadius: '30px',
+          padding: '10px 22px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+          cursor: 'pointer',
+          pointerEvents: 'auto',
+          transition: 'all 0.2s ease',
+          outline: 'none',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)' }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1.0)' }}
+      >
         {/* Animated bars for listening/speaking */}
         {(novaState === 'listening' || novaState === 'speaking') ? (
           <div style={{ display: 'flex', gap: 2, alignItems: 'center', height: 14 }}>
@@ -113,26 +147,27 @@ export default function NovaPresenceIndicator() {
 
         <span style={{
           fontFamily: "'JetBrains Mono', monospace",
-          fontSize: '0.65rem',
-          letterSpacing: '0.12em',
+          fontSize: '0.68rem',
+          letterSpacing: '0.1em',
           color: dotColor,
-          fontWeight: 700,
+          fontWeight: 800,
         }}>
-          {stateLabels[novaState] || 'NOVA · IDLE'}
+          {stateLabels[novaState] || 'TAP TO SPEAK TO NOVA'}
         </span>
 
         {/* Deepgram badge */}
         <span style={{
           fontFamily: "'JetBrains Mono', monospace",
-          fontSize: '0.45rem',
+          fontSize: '0.48rem',
           color: '#8E9096',
           letterSpacing: '0.05em',
           borderLeft: '1px solid #C8C9C6',
           paddingLeft: 8,
+          fontWeight: 700,
         }}>
           DEEPGRAM
         </span>
-      </div>
+      </button>
 
       <style>{`
         @keyframes waveform-bar {

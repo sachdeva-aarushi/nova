@@ -29,7 +29,6 @@ export default function RealSystemSimulation() {
     await requestMicPermission()
     startSimulation()
     startLiveTelemetryStream()
-    startRealVoiceListener()
   }, [startSimulation])
 
   const handleStop = useCallback(() => {
@@ -209,7 +208,7 @@ export default function RealSystemSimulation() {
               boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
             }}
           >
-            <span>↺</span> Reset Telemetry
+            Reset Telemetry
           </button>
           <button
             onClick={handleStop}
@@ -364,7 +363,7 @@ export default function RealSystemSimulation() {
                 borderRadius: '4px',
                 letterSpacing: '0.05em',
               }}>
-                ⚠ CRITICAL ALERT
+                CRITICAL ALERT
               </span>
             </div>
 

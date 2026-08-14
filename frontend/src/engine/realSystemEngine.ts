@@ -215,15 +215,18 @@ function executeActions(actions: string[]) {
 export function startRealVoiceListener() {
   startDeepgramListening((text, isFinal) => {
     if (!isFinal) {
-      useSimulationStore.getState().setNovaCaption(`🎙 ${text}`)
+      useSimulationStore.getState().setNovaCaption(`[USER] ${text}`)
       return
     }
+
+    // Close microphone listening session cleanly for this turn
+    stopDeepgramListening()
 
     // Halt active TTS immediately (Instant Barge-In)
     stopCurrentTTS()
 
     const store = useSimulationStore.getState()
-    store.setNovaCaption('')
+    store.setNovaCaption(`[USER] ${text}`)
     store.setNovaState('processing')
     store.addEvent({
       type: 'nova-action',

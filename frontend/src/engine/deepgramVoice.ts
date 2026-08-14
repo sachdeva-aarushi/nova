@@ -62,6 +62,14 @@ export async function startDeepgramListening(
 ): Promise<void> {
   onTranscriptCallback = onTranscript
   isListening = true
+  useSimulationStore.getState().setNovaState('listening')
+
+  // Prefer Browser WebSpeech API directly when available for instant 0-latency single-turn voice recognition
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (SpeechRecognition) {
+    startWebSpeechFallback(onTranscript)
+    return
+  }
 
   if (!audioStream) {
     try {
@@ -74,8 +82,7 @@ export async function startDeepgramListening(
         },
       })
     } catch (err) {
-      console.warn('[Voice Engine] Mic access unavailable, using browser SpeechRecognition fallback:', err)
-      startWebSpeechFallback(onTranscript)
+      console.warn('[Voice Engine] Mic access unavailable:', err)
       return
     }
   }
@@ -147,7 +154,7 @@ export async function startDeepgramListening(
             if (isSpeaking || (window as any)._isRimeSpeaking) {
               stopCurrentTTS()
             }
-            useSimulationStore.getState().setNovaCaption(isFinal ? '' : `🎙 ${text}`)
+            useSimulationStore.getState().setNovaCaption(`[USER] ${text}`)
             if (onTranscriptCallback) {
               onTranscriptCallback(text, isFinal)
             }
@@ -159,7 +166,10 @@ export async function startDeepgramListening(
     }
 
     dgSocket.onerror = (err) => {
-      console.warn('[Deepgram STT] Connection error event fired:', err)
+      console.warn('[Deepgram STT] Connection error event fired — triggering instant WebSpeech fallback:', err)
+      if (isListening && onTranscriptCallback) {
+        startWebSpeechFallback(onTranscriptCallback)
+      }
     }
 
     dgSocket.onclose = (ev) => {
@@ -175,15 +185,15 @@ export async function startDeepgramListening(
       }
 
       if (isListening) {
-        // Deepgram code 1011 (idle silence timeout) or 1000 (normal close): auto-reconnect cleanly
-        if (ev.code === 1011 || ev.code === 1000) {
-          console.log(`[Deepgram STT] Socket closed cleanly (Code ${ev.code}) — auto-reconnecting...`)
+        // Deepgram code 1011 (idle silence timeout), 1000 (normal close), or 1006 (abrupt close): auto-reconnect cleanly
+        if (ev.code === 1011 || ev.code === 1000 || ev.code === 1006) {
+          console.log(`[Deepgram STT] Socket closed (Code ${ev.code}) — auto-reconnecting continuous listener...`)
           if (reconnectTimeout) clearTimeout(reconnectTimeout)
           reconnectTimeout = setTimeout(() => {
             if (isListening && onTranscriptCallback) {
               startDeepgramListening(onTranscriptCallback)
             }
-          }, 300)
+          }, 200)
           return
         }
 
@@ -191,7 +201,6 @@ export async function startDeepgramListening(
 
         consecutiveFails++
         if (consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
-          console.warn('[Deepgram STT] Max retries reached — switching to Browser WebSpeech fallback')
           startWebSpeechFallback(onTranscriptCallback!)
           return
         }
@@ -202,7 +211,7 @@ export async function startDeepgramListening(
           if (isListening && onTranscriptCallback) {
             startDeepgramListening(onTranscriptCallback)
           }
-        }, 1000)
+        }, 500)
       }
     }
   } catch (exc) {
@@ -290,8 +299,11 @@ export function stopDeepgramListening() {
   useSimulationStore.getState().setNovaState('idle')
 }
 
-// ─── Browser WebSpeech Fallback ───────────────────────────────────────────── //
+// ─── Browser WebSpeech Engine (Bulletproof Single-Turn STT) ───────────────── //
 let fallbackRecognition: any = null
+let speechSilenceTimer: any = null
+let lastSpokenCandidate: string = ''
+let isFinalProcessed: boolean = false
 
 function startWebSpeechFallback(onTranscript: (text: string, isFinal: boolean) => void) {
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -305,8 +317,12 @@ function startWebSpeechFallback(onTranscript: (text: string, isFinal: boolean) =
       try { fallbackRecognition.stop() } catch {}
     }
 
+    if (speechSilenceTimer) clearTimeout(speechSilenceTimer)
+    lastSpokenCandidate = ''
+    isFinalProcessed = false
+
     fallbackRecognition = new SpeechRecognition()
-    fallbackRecognition.continuous = true
+    fallbackRecognition.continuous = false
     fallbackRecognition.interimResults = true
     fallbackRecognition.lang = 'en-US'
 
@@ -328,25 +344,45 @@ function startWebSpeechFallback(onTranscript: (text: string, isFinal: boolean) =
         }
       }
 
-      const candidate = final.trim() || interim.trim()
+      const candidate = (final.trim() || interim.trim())
       if (candidate && isSelfEcho(candidate)) {
         return
       }
 
-      if (final.trim()) {
+      if (candidate) {
+        lastSpokenCandidate = candidate
+        useSimulationStore.getState().setNovaCaption(`[USER] ${candidate}`)
+        onTranscript(candidate, false)
+
+        // Reset 1000ms silence timer — auto-submits if user pauses speaking for 1 second
+        if (speechSilenceTimer) clearTimeout(speechSilenceTimer)
+        speechSilenceTimer = setTimeout(() => {
+          if (!isFinalProcessed && lastSpokenCandidate.trim() && isListening) {
+            isFinalProcessed = true
+            if (isSpeaking || (window as any)._isRimeSpeaking) {
+              stopCurrentTTS()
+            }
+            onTranscript(lastSpokenCandidate.trim(), true)
+          }
+        }, 1000)
+      }
+
+      if (final.trim() && !isFinalProcessed) {
+        isFinalProcessed = true
+        if (speechSilenceTimer) clearTimeout(speechSilenceTimer)
         if (isSpeaking || (window as any)._isRimeSpeaking) {
           stopCurrentTTS()
         }
-        useSimulationStore.getState().setNovaCaption('')
         onTranscript(final.trim(), true)
-      } else if (interim.trim()) {
-        useSimulationStore.getState().setNovaCaption(`🎙 ${interim.trim()}`)
-        onTranscript(interim.trim(), false)
       }
     }
 
     fallbackRecognition.onerror = (err: any) => {
       console.warn('[SpeechFallback] Recognition error:', err)
+      if (lastSpokenCandidate.trim() && !isFinalProcessed) {
+        isFinalProcessed = true
+        onTranscript(lastSpokenCandidate.trim(), true)
+      }
     }
 
     fallbackRecognition.onend = () => {
@@ -424,7 +460,7 @@ export function stopCurrentTTS() {
 
   const store = useSimulationStore.getState()
   if (store.novaState === 'speaking') {
-    store.setNovaState('listening')
+    store.setNovaState('idle')
   }
 }
 
@@ -460,7 +496,7 @@ async function playAudioBuffer(arrayBuffer: ArrayBuffer): Promise<void> {
             currentTTSSource = null
             isSpeaking = false
             ;(window as any)._isRimeSpeaking = false
-            useSimulationStore.getState().setNovaState('listening')
+            useSimulationStore.getState().setNovaState('idle')
             resolve()
           }
 
@@ -491,13 +527,13 @@ function speakWebSpeechFallback(text: string) {
   utterance.onend = () => {
     isSpeaking = false
     ;(window as any)._isRimeSpeaking = false
-    useSimulationStore.getState().setNovaState('listening')
+    useSimulationStore.getState().setNovaState('idle')
   }
 
   utterance.onerror = () => {
     isSpeaking = false
     ;(window as any)._isRimeSpeaking = false
-    useSimulationStore.getState().setNovaState('listening')
+    useSimulationStore.getState().setNovaState('idle')
   }
 
   window.speechSynthesis.speak(utterance)
