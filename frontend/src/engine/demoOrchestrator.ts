@@ -1,5 +1,6 @@
 import { useDemoStore } from '../store/useDemoStore'
 import { novaSpeak, initSpeechEngine } from './novaSpeech'
+import { getApiUrl } from '../services/api'
 
 let demoTimer: ReturnType<typeof setTimeout> | null = null
 let sensorInterval: ReturnType<typeof setInterval> | null = null
@@ -14,7 +15,7 @@ async function jitterSensors() {
   const store = useDemoStore.getState()
   // REAL: fetched from GET /api/factory/state via backend event bus / DB
   try {
-    const res = await fetch('/api/factory/state')
+    const res = await fetch(getApiUrl('/api/factory/state'))
     if (res.ok) {
       const data = await res.json()
       if (data && data.sensors) {

@@ -9,6 +9,7 @@
 
 import { useSimulationStore, SensorReading } from '../store/useSimulationStore'
 import { startDeepgramListening, stopDeepgramListening, deepgramSpeak, stopCurrentTTS } from './deepgramVoice'
+import { getApiUrl } from '../services/api'
 
 let telemetryTimeout: ReturnType<typeof setTimeout> | null = null
 let lastSpokenAnomalyZone: string | null = null
@@ -28,7 +29,7 @@ export function startLiveTelemetryStream() {
     if (!s.isRunning) return
 
     try {
-      const res = await fetch('/api/factory/state')
+      const res = await fetch(getApiUrl('/api/factory/state'))
       if (res.ok) {
         const data = await res.json()
         const currentSensors = s.sensors
@@ -82,7 +83,7 @@ export function startLiveTelemetryStream() {
         s.setEvidenceOpen(true)
 
         // 2. Push critical event to Qdrant memory backend asynchronously
-        fetch('/api/memory/critical', {
+        fetch(getApiUrl('/api/memory/critical'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -150,7 +151,7 @@ export async function generateReActResponse(userQuery: string): Promise<{ spoken
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 15000)
 
-  const backendRes = await fetch('/api/voice/query', {
+  const backendRes = await fetch(getApiUrl('/api/voice/query'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -203,7 +204,7 @@ function executeActions(actions: string[]) {
       store.setOverlayView('signals')
     } else if (action === 'AUTHORIZE' || action.startsWith('REVOKE') || action.startsWith('CANCEL') || action === 'CANCEL_PERMIT') {
       store.clearBayRisk()
-      fetch('/api/cases/case-bay3/authorize', { method: 'POST' }).catch(() => {})
+      fetch(getApiUrl('/api/cases/case-bay3/authorize'), { method: 'POST' }).catch(() => {})
     } else if (action === 'REJECT') {
       store.rejectAction()
     }
@@ -241,7 +242,7 @@ export function startRealVoiceListener() {
     if (lower.includes('cancel') || lower.includes('revoke') || lower.includes('suspend') || lower.includes('authorize') || lower.includes('stop hot work') || lower.includes('clear risk')) {
       const targetZone = bayMatch ? `Bay ${bayMatch[1]}` : (store.focusedZone || 'Bay 3')
       store.clearBayRisk(targetZone)
-      fetch('/api/cases/case-bay3/authorize', { method: 'POST' }).catch(() => {})
+      fetch(getApiUrl('/api/cases/case-bay3/authorize'), { method: 'POST' }).catch(() => {})
     } else if (bayMatch && (lower.includes('zoom') || lower.includes('focus') || lower.includes('show') || lower.includes('go to'))) {
       store.focusZone(`Bay ${bayMatch[1]}`)
     } else if (lower.includes('zoom out') || lower.includes('reset') || lower.includes('plant view') || lower.includes('overview')) {

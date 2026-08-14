@@ -158,9 +158,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Event bus started, WS bridge active, audio WS ready")
     logger.info("VIGIL backend ready  |  db=%s", db_path)
 
+    # Start internal BackgroundSimulatorService (controlled by SIMULATOR_ENABLED)
+    from backend.simulator import BackgroundSimulatorService
+    sim_service = BackgroundSimulatorService(bus)
+    await sim_service.start()
+
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────── #
+    await sim_service.stop()
     await bus.shutdown()
     logger.info("VIGIL backend shutting down")
 

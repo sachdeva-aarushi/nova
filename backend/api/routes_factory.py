@@ -459,3 +459,5 @@ async def get_active_permits() -> list[dict]:
             return [dict(r) for r in rows]
     except Exception:
         return []
+
+

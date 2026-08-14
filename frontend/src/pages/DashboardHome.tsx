@@ -102,7 +102,7 @@ export default function DashboardHome() {
     // REAL: fetches live agent actions and factory telemetry from backend API
     const fetchState = async () => {
       try {
-        const res = await fetch('/api/factory/state')
+        const res = await fetch(getApiUrl('/api/factory/state'))
         if (res.ok) {
           const data = await res.json()
           if (data && data.sensors) {

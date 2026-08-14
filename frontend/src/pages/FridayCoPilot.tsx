@@ -8,6 +8,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useCaseStore } from '../store/useCaseStore'
 import { Bot, Mic2, MicOff, Send, Zap, AlertTriangle, Shield, Search, ChevronRight, Wifi } from 'lucide-react'
 
+import { getApiUrl } from '../services/api'
+
 const BG = '#080F1E', SURFACE = '#0F1729', CARD = '#141F35'
 const BORDER = 'rgba(132,255,0,0.18)', ACC = '#84ff00', TXT = '#E2E8F0'
 const FD = "'Plus Jakarta Sans',sans-serif", FM = "'JetBrains Mono',monospace"
@@ -138,7 +140,7 @@ export default function NovaCoPilot() {
 
     // REAL: fetched from POST /api/voice/query via backend Groq LLM agent
     try {
-      const res = await fetch('/api/voice/query', {
+      const res = await fetch(getApiUrl('/api/voice/query'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: text.trim() })

@@ -12,13 +12,23 @@ import type {
   ZoneStatus,
 } from '../types/api'
 
-const BASE_URL: string =
-  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
+export const BASE_URL: string =
+  ((import.meta.env.VITE_API_URL as string | undefined) ||
+   (import.meta.env.VITE_API_BASE_URL as string | undefined))?.replace(/\/+$/, '') ??
+  (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+    ? 'https://nova-2-z63a.onrender.com'
+    : '')
+
+export function getApiUrl(path: string): string {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return BASE_URL ? `${BASE_URL}${cleanPath}` : cleanPath
+}
 
 // ── Core fetch helpers ───────────────────────────────────────────────────── //
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const url = getApiUrl(path)
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
     ...init,
   })

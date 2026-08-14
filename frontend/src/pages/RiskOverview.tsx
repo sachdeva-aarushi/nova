@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
+import { getApiUrl } from '../services/api'
 import { 
   ArrowRight, Play, Mic2, ShieldCheck, Database, Zap, Activity,
   AlertTriangle, ChevronDown, Check, Quote, ArrowUpRight, Radio,
@@ -265,7 +266,7 @@ function HeroInteractiveConsole() {
   useEffect(() => {
     const fetchScore = async () => {
       try {
-        const res = await fetch('/api/factory/state')
+        const res = await fetch(getApiUrl('/api/factory/state'))
         if (res.ok) {
           const data = await res.json()
           if (data && data.compound_risk_score != null) {

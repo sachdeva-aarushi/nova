@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { Activity, Users, Settings2, Zap } from 'lucide-react'
+import { getApiUrl } from '../../services/api'
 
 export default function FactoryStatsOverlay() {
   // Simulate live data fluctuating slightly for the "alive" feel
   const [stats, setStats] = useState({
     production: 98.4,
-    power: 4.2,
-    personnel: 124,
+    power: 14.2,
+    personnel: 24,
     pressure: 101.2
   })
 
@@ -14,7 +15,7 @@ export default function FactoryStatsOverlay() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch('/api/factory/state')
+        const res = await fetch(getApiUrl('/api/factory/state'))
         if (res.ok) {
           const data = await res.json()
           setStats(prev => ({

@@ -7,15 +7,20 @@
  * Usage:
  *   const { isPlaying, bargeIn } = useRimeAudio(caseId)
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { getApiUrl } from '../services/api'
 
 const getWsAudioBase = (): string => {
   if (import.meta.env.VITE_WS_URL) {
-    return import.meta.env.VITE_WS_URL as string
+    return (import.meta.env.VITE_WS_URL as string).replace(/\/+$/, '')
   }
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}`
+  const apiEnv = (import.meta.env.VITE_API_URL as string | undefined) || (import.meta.env.VITE_API_BASE_URL as string | undefined)
+  if (apiEnv && /^https?:\/\//i.test(apiEnv)) {
+    const wsProtocol = apiEnv.startsWith('https') ? 'wss:' : 'ws:'
+    const host = apiEnv.replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+    return `${wsProtocol}//${host}`
+  }
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return 'wss://nova-2-z63a.onrender.com'
   }
   return 'ws://localhost:8000'
 }
@@ -165,7 +170,7 @@ export function useRimeAudio(
       playingRef.current = false
 
       // Tell backend to cancel synthesis
-      await fetch(`/api/voice/cancel`, {
+      await fetch(getApiUrl('/api/voice/cancel'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ case_id: caseId }),

@@ -11,16 +11,30 @@ import type { WsEnvelope, WsStatus } from '../types/api'
 type MessageHandler = (msg: WsEnvelope) => void
 type StatusHandler = (status: WsStatus) => void
 
-const getWsUrl = (sessionId: string): string => {
+export const getWsUrl = (sessionId: string): string => {
+  let rawWs = (import.meta.env.VITE_WS_URL as string | undefined)?.replace(/\/+$/, '')
+  if (rawWs) {
+    if (rawWs.includes('/ws/session')) return `${rawWs}/${sessionId}`
+    return `${rawWs}/ws/session/${sessionId}`
+  }
+
+  const apiEnv = (import.meta.env.VITE_API_URL as string | undefined) || (import.meta.env.VITE_API_BASE_URL as string | undefined)
+  if (apiEnv && /^https?:\/\//i.test(apiEnv)) {
+    const wsProtocol = apiEnv.startsWith('https') ? 'wss:' : 'ws:'
+    const host = apiEnv.replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+    return `${wsProtocol}//${host}/ws/session/${sessionId}`
+  }
+
   if (import.meta.env.VITE_WS_HOST) {
     const host = import.meta.env.VITE_WS_HOST as string
     const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${protocol}//${host}/ws/session/${sessionId}`
   }
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}/ws/session/${sessionId}`
+
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return `wss://nova-2-z63a.onrender.com/ws/session/${sessionId}`
   }
+
   return `ws://localhost:8000/ws/session/${sessionId}`
 }
 

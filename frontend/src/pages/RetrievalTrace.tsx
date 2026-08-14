@@ -46,7 +46,7 @@ export default function RetrievalTrace() {
 
   // REAL: fetched from GET /api/retrieval via backend Qdrant hybrid search
   useEffect(() => {
-    fetch('/api/retrieval/case-bay3')
+    fetch(getApiUrl('/api/retrieval/case-bay3'))
       .then(res => res.json())
       .then(data => {
         if (data && data.matches && data.matches.length > 0) {
